@@ -259,9 +259,12 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                     (widget.panelId == 'right' &&
                         focusState.activePanel == ActivePanel.right);
 
+                // Text color is red if selected (Marked), otherwise default
+                final textColor = isSelected ? Colors.red : null;
+
                 return GestureDetector(
                   onTap: () {
-                    // Single click: Set focus to this panel and index, select item
+                    // Single click: Set focus to this panel and index
                     ref
                         .read(focusProvider.notifier)
                         .setActivePanel(
@@ -270,7 +273,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                               : ActivePanel.right,
                         );
                     controller.setFocusedIndex(index);
-                    controller.selectItem(item.path);
+                    // No selection update on simple click
                   },
                   onDoubleTap: () {
                     // Double click: Navigate or open
@@ -283,13 +286,16 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                   },
                   child: Container(
                     decoration: BoxDecoration(
-                      color: isSelected
-                          ? theme.colorScheme.primaryContainer
+                      // Background highlights focused item (Cursor)
+                      color: isFocused && isActivePanel
+                          ? theme.colorScheme.secondaryContainer
+                          : isFocused
+                          ? theme.colorScheme.surfaceContainerHigh
                           : theme.colorScheme.surface,
                       border: isFocused && isActivePanel
                           ? Border.all(
                               color: theme.colorScheme.primary,
-                              width: 2,
+                              width: 1,
                             )
                           : null,
                     ),
@@ -304,7 +310,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                           flex: 3,
                           child: Text(
                             item.name,
-                            style: theme.textTheme.bodySmall,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: textColor,
+                            ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -316,7 +324,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                                 : item.isParentDetails
                                 ? ''
                                 : _formatSize(item.size),
-                            style: theme.textTheme.bodySmall,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: textColor,
+                            ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -326,7 +336,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                             item.isParentDetails
                                 ? ''
                                 : _dateFormat.format(item.modified),
-                            style: theme.textTheme.bodySmall,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: textColor,
+                            ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
