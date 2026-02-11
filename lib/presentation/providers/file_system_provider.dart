@@ -39,7 +39,11 @@ class PanelController extends StateNotifier<PanelState> {
 
   Future<void> loadPath(String path) async {
     try {
-      final items = await _repository.getItems(path);
+      final settings = _ref.read(userSettingsProvider);
+      final items = await _repository.getItems(
+        path,
+        showHiddenFiles: settings.showHiddenFiles,
+      );
       state = state.copyWith(
         currentPath: path,
         items: _sortItems(items, state.sortColumn, state.sortAscending),

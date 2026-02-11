@@ -1,5 +1,6 @@
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
+import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -77,6 +78,14 @@ class KeyboardHandler extends ConsumerWidget {
         // Tab - Switch panel
         if (event.logicalKey == LogicalKeyboardKey.tab) {
           focusController.switchPanel();
+          return KeyEventResult.handled;
+        }
+
+        // Ctrl+H - Toggle hidden files
+        if (event.logicalKey == LogicalKeyboardKey.keyH &&
+            (HardwareKeyboard.instance.isControlPressed ||
+                HardwareKeyboard.instance.isMetaPressed)) {
+          ref.read(userSettingsProvider.notifier).toggleShowHiddenFiles();
           return KeyEventResult.handled;
         }
 

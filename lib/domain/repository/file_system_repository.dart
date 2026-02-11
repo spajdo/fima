@@ -1,7 +1,10 @@
 import 'package:fima/domain/entity/file_system_item.dart';
 
 abstract class FileSystemRepository {
-  Future<List<FileSystemItem>> getItems(String path);
+  Future<List<FileSystemItem>> getItems(
+    String path, {
+    bool showHiddenFiles = false,
+  });
   Future<String> getHomeDirectory();
   Future<void> deleteItem(String path);
   Future<void> createDirectory(String path);

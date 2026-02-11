@@ -7,7 +7,10 @@ import 'package:path_provider/path_provider.dart';
 
 class LocalFileSystemRepository implements FileSystemRepository {
   @override
-  Future<List<FileSystemItem>> getItems(String path) async {
+  Future<List<FileSystemItem>> getItems(
+    String path, {
+    bool showHiddenFiles = false,
+  }) async {
     final dir = Directory(path);
     if (!await dir.exists()) {
       throw FileSystemException('Directory not found', path);
@@ -20,14 +23,16 @@ class LocalFileSystemRepository implements FileSystemRepository {
     // simpler check: if path is not root.
     final parent = dir.parent;
     if (parent.path != dir.path) {
-       items.add(FileSystemItem(
-         path: parent.path,
-         name: '..',
-         size: 0,
-         modified: DateTime.now(), // dummy
-         isDirectory: true,
-         isParentDetails: true,
-       ));
+      items.add(
+        FileSystemItem(
+          path: parent.path,
+          name: '..',
+          size: 0,
+          modified: DateTime.now(), // dummy
+          isDirectory: true,
+          isParentDetails: true,
+        ),
+      );
     }
 
     try {
@@ -36,16 +41,21 @@ class LocalFileSystemRepository implements FileSystemRepository {
         try {
           final stat = await entity.stat();
           final name = p.basename(entity.path);
-          // Skip hidden files if likely intended, but request didn't specify.
-          // keeping all files for now.
 
-          items.add(FileSystemItem(
-            path: entity.path,
-            name: name,
-            size: stat.size,
-            modified: stat.modified,
-            isDirectory: entity is Directory,
-          ));
+          // Skip hidden files unless showHiddenFiles is true
+          if (!showHiddenFiles && name.startsWith('.')) {
+            continue;
+          }
+
+          items.add(
+            FileSystemItem(
+              path: entity.path,
+              name: name,
+              size: stat.size,
+              modified: stat.modified,
+              isDirectory: entity is Directory,
+            ),
+          );
         } catch (e) {
           // Ignore items we can't stat (permission denied etc)
           // or handle them gracefully?
@@ -53,10 +63,10 @@ class LocalFileSystemRepository implements FileSystemRepository {
         }
       }
     } catch (e) {
-       // access denied to list directory
-       rethrow; 
+      // access denied to list directory
+      rethrow;
     }
-    
+
     // Sort logic is in the UI/State layer usually, but repository just returns items.
     return items;
   }
@@ -79,10 +89,12 @@ class LocalFileSystemRepository implements FileSystemRepository {
 
     // Fallback to path_provider
     try {
-       final directory = await getApplicationDocumentsDirectory();
-       return directory.parent.path; // Often documents is ~/Documents, so parent is ~
+      final directory = await getApplicationDocumentsDirectory();
+      return directory
+          .parent
+          .path; // Often documents is ~/Documents, so parent is ~
     } catch (_) {
-       return '/'; // Fallback to root
+      return '/'; // Fallback to root
     }
   }
 
@@ -102,7 +114,7 @@ class LocalFileSystemRepository implements FileSystemRepository {
   Future<void> createDirectory(String path) async {
     await Directory(path).create();
   }
-  
+
   @override
   Future<void> createFile(String path) async {
     await File(path).create();

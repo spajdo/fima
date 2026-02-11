@@ -3,12 +3,14 @@ class UserSettings {
   final String rightPanelPath;
   final double panelSplitRatio;
   final double fontSize;
+  final bool showHiddenFiles;
 
   const UserSettings({
     required this.leftPanelPath,
     required this.rightPanelPath,
     this.panelSplitRatio = 0.5,
     this.fontSize = 14.0,
+    this.showHiddenFiles = false,
   });
 
   // Default settings
@@ -18,6 +20,7 @@ class UserSettings {
       rightPanelPath: '',
       panelSplitRatio: 0.5,
       fontSize: 14.0,
+      showHiddenFiles: false, // Hidden files are hidden by default
     );
   }
 
@@ -28,6 +31,7 @@ class UserSettings {
       rightPanelPath: json['rightPanelPath'] as String? ?? '',
       panelSplitRatio: (json['panelSplitRatio'] as num?)?.toDouble() ?? 0.5,
       fontSize: (json['fontSize'] as num?)?.toDouble() ?? 14.0,
+      showHiddenFiles: json['showHiddenFiles'] as bool? ?? false,
     );
   }
 
@@ -38,6 +42,7 @@ class UserSettings {
       'rightPanelPath': rightPanelPath,
       'panelSplitRatio': panelSplitRatio,
       'fontSize': fontSize,
+      'showHiddenFiles': showHiddenFiles,
     };
   }
 
@@ -47,12 +52,14 @@ class UserSettings {
     String? rightPanelPath,
     double? panelSplitRatio,
     double? fontSize,
+    bool? showHiddenFiles,
   }) {
     return UserSettings(
       leftPanelPath: leftPanelPath ?? this.leftPanelPath,
       rightPanelPath: rightPanelPath ?? this.rightPanelPath,
       panelSplitRatio: panelSplitRatio ?? this.panelSplitRatio,
       fontSize: fontSize ?? this.fontSize,
+      showHiddenFiles: showHiddenFiles ?? this.showHiddenFiles,
     );
   }
 }

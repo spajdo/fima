@@ -26,6 +26,7 @@ class FilePanel extends ConsumerStatefulWidget {
 class _FilePanelState extends ConsumerState<FilePanel> {
   final DateFormat _dateFormat = DateFormat('yyyy-MM-dd HH:mm');
   final ScrollController _scrollController = ScrollController();
+  bool _previousShowHiddenFiles = false;
 
   @override
   void initState() {
@@ -38,6 +39,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           ? widget.initialPath
           : null;
       ref.read(panelStateProvider(widget.panelId).notifier).init(pathToInit);
+
+      // Store initial showHiddenFiles value
+      _previousShowHiddenFiles = ref.read(userSettingsProvider).showHiddenFiles;
     });
   }
 
@@ -162,6 +166,15 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     final settings = ref.watch(userSettingsProvider);
     final fontSize = settings.fontSize;
     final itemHeight = fontSize + 16.0; // Dynamic height based on font size
+
+    // Check if showHiddenFiles setting changed and refresh if needed
+    if (_previousShowHiddenFiles != settings.showHiddenFiles) {
+      _previousShowHiddenFiles = settings.showHiddenFiles;
+      final currentPath = panelState.currentPath;
+      if (currentPath.isNotEmpty) {
+        controller.loadPath(currentPath);
+      }
+    }
 
     ref.listen(panelStateProvider(widget.panelId), (previous, next) {
       if (previous?.focusedIndex != next.focusedIndex) {

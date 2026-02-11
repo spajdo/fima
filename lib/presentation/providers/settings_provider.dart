@@ -57,4 +57,10 @@ class SettingsController extends StateNotifier<UserSettings> {
       save(); // Auto-save
     }
   }
+
+  /// Toggle show hidden files setting
+  void toggleShowHiddenFiles() {
+    state = state.copyWith(showHiddenFiles: !state.showHiddenFiles);
+    save(); // Auto-save
+  }
 }
