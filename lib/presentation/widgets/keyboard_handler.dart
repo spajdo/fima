@@ -1,5 +1,6 @@
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
+import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
 import 'package:flutter/material.dart';
@@ -122,6 +123,19 @@ class KeyboardHandler extends ConsumerWidget {
           }
           return KeyEventResult.handled;
         }
+
+        // F5 - Copy
+        if (event.logicalKey == LogicalKeyboardKey.f5) {
+          ref.read(operationStatusProvider.notifier).startCopy();
+          return KeyEventResult.handled;
+        }
+
+        // F6 - Move
+        if (event.logicalKey == LogicalKeyboardKey.f6) {
+          ref.read(operationStatusProvider.notifier).startMove();
+          return KeyEventResult.handled;
+        }
+
 
         return KeyEventResult.ignored;
       },

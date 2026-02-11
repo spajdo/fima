@@ -1,4 +1,5 @@
 import 'package:fima/presentation/providers/settings_provider.dart';
+import 'package:fima/presentation/widgets/bottom_status_bar.dart';
 import 'package:fima/presentation/widgets/panel/file_panel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -49,49 +50,56 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     return Scaffold(
       body: !_settingsLoaded
           ? const Center(child: CircularProgressIndicator())
-          : LayoutBuilder(
-        builder: (context, constraints) {
-          final width = constraints.maxWidth;
-          final leftWidth = width * _splitRatio;
-          final rightWidth = width - leftWidth - 4; // 4 is splitter width
+          : Column(
+              children: [
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final width = constraints.maxWidth;
+                      final leftWidth = width * _splitRatio;
+                      final rightWidth = width - leftWidth - 4; // 4 is splitter width
 
-          return Row(
-            children: [
-              SizedBox(
-                width: leftWidth,
-                child: FilePanel(
-                  panelId: 'left',
-                  initialPath: settings.leftPanelPath,
-                ),
-              ),
-              GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onHorizontalDragUpdate: (details) {
-                  final newRatio = (_splitRatio + details.delta.dx / width).clamp(0.2, 0.8);
-                  _updateSplitRatio(newRatio);
-                },
-                child: Container(
-                  width: 4,
-                  color: Theme.of(context).dividerColor,
-                  child: Center(
-                    child: Container(
-                      width: 2,
-                      color: Colors.grey, // Visual indicator
-                    ),
+                      return Row(
+                        children: [
+                          SizedBox(
+                            width: leftWidth,
+                            child: FilePanel(
+                              panelId: 'left',
+                              initialPath: settings.leftPanelPath,
+                            ),
+                          ),
+                          GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onHorizontalDragUpdate: (details) {
+                              final newRatio = (_splitRatio + details.delta.dx / width).clamp(0.2, 0.8);
+                              _updateSplitRatio(newRatio);
+                            },
+                            child: Container(
+                              width: 4,
+                              color: Theme.of(context).dividerColor,
+                              child: Center(
+                                child: Container(
+                                  width: 2,
+                                  color: Colors.grey, // Visual indicator
+                                ),
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: rightWidth,
+                            child: FilePanel(
+                              panelId: 'right',
+                              initialPath: settings.rightPanelPath,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
-              ),
-              SizedBox(
-                width: rightWidth,
-                child: FilePanel(
-                  panelId: 'right',
-                  initialPath: settings.rightPanelPath,
-                ),
-              ),
-            ],
-          );
-        },
-      ),
+                const BottomStatusBar(),
+              ],
+            ),
     );
   }
 }

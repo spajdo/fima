@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:fima/domain/entity/file_operation.dart';
 import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/repository/file_system_repository.dart';
 import 'package:path/path.dart' as p;
@@ -146,6 +147,7 @@ class LocalFileSystemRepository implements FileSystemRepository {
     await renameItem(sourcePath, destinationPath);
   }
 
+  // Helper for non-stream copy (used by copyItem)
   Future<void> _copyDirectory(Directory source, Directory destination) async {
     await destination.create(recursive: true);
     await for (final entity in source.list(recursive: false)) {
@@ -156,6 +158,238 @@ class LocalFileSystemRepository implements FileSystemRepository {
         await entity.copy(newPath);
       }
     }
+  }
+
+  @override
+  Stream<OperationStatus> copyItems(
+    List<String> sourcePaths,
+    String destinationPath,
+    CancellationToken token,
+  ) async* {
+    int totalItems = 0;
+    int totalBytes = 0;
+    int processedItems = 0;
+    int processedBytes = 0;
+
+    // 1. Calculate totals
+    for (final path in sourcePaths) {
+      if (token.isCancelled) return;
+      final stats = await _calculateTotalSize(path);
+      totalItems += stats.$1;
+      totalBytes += stats.$2;
+    }
+
+    yield OperationStatus(
+      totalBytes: totalBytes,
+      processedBytes: 0,
+      totalItems: totalItems,
+      processedItems: 0,
+      currentItem: 'Preparing...',
+    );
+
+    // 2. Perform copy
+    for (final sourcePath in sourcePaths) {
+      if (token.isCancelled) return;
+      final entityName = p.basename(sourcePath);
+      final destPath = p.join(destinationPath, entityName);
+
+      // Recursive copy with stream
+      await for (final status in _recursiveCopy(
+        sourcePath,
+        destPath,
+        token,
+        totalBytes,
+        totalItems,
+        processedBytes,
+        processedItems,
+      )) {
+        yield status;
+        processedBytes = status.processedBytes;
+        processedItems = status.processedItems;
+      }
+      
+      // Update totals for next iteration if needed
+      // (processedBytes and processedItems are updated via stream yield)
+    }
+  }
+
+  @override
+  Stream<OperationStatus> moveItems(
+    List<String> sourcePaths,
+    String destinationPath,
+    CancellationToken token,
+  ) async* {
+    int totalItems = sourcePaths.length;
+    int processedItems = 0;
+    // For move totalBytes is only accurate if we fallback to copy.
+    // We start with 0 and update if fallback happens.
+
+    yield OperationStatus(
+      totalBytes: 0,
+      processedBytes: 0,
+      totalItems: totalItems,
+      processedItems: 0,
+      currentItem: 'Preparing...',
+    );
+
+    for (final sourcePath in sourcePaths) {
+      if (token.isCancelled) return;
+      final entityName = p.basename(sourcePath);
+      final destPath = p.join(destinationPath, entityName);
+
+      bool renameSuccess = false;
+      try {
+        await renameItem(sourcePath, destPath);
+        renameSuccess = true;
+      } catch (e) {
+        // Fallback to copy + delete
+        renameSuccess = false;
+      }
+
+      if (renameSuccess) {
+        processedItems++;
+        yield OperationStatus(
+          totalBytes: 0, 
+          processedBytes: 0,
+          totalItems: totalItems,
+          processedItems: processedItems,
+          currentItem: entityName,
+        );
+      } else {
+        // Fallback: Copy then Delete
+        final stats = await _calculateTotalSize(sourcePath);
+        final copyTotalItems = stats.$1;
+        final copyTotalBytes = stats.$2;
+
+         await for (final status in _recursiveCopy(
+          sourcePath,
+          destPath,
+          token,
+          copyTotalBytes,
+          copyTotalItems,
+          0,
+          0,
+        )) {
+            yield status.copyWith(
+                currentItem: 'Moving ${status.currentItem}'
+            );
+        }
+        
+        if (!token.isCancelled) {
+             await deleteItem(sourcePath);
+             processedItems++;
+        }
+      }
+    }
+  }
+
+  // Tuple <Items, Bytes>
+  // Simple Pair implementation since we don't have tuple package
+  Future<(int, int)> _calculateTotalSize(String path) async {
+    int items = 0;
+    int bytes = 0;
+    final type = await FileSystemEntity.type(path);
+    
+    if (type == FileSystemEntityType.file) {
+      items = 1;
+      bytes = (await File(path).stat()).size;
+    } else if (type == FileSystemEntityType.directory) {
+      items = 1; // Directory itself
+      try {
+        await for (final entity in Directory(path).list(recursive: true, followLinks: false)) {
+            items++;
+            if (entity is File) {
+                bytes += (await entity.stat()).size;
+            }
+        }
+      } catch (e) {
+          // Ignore access errors
+      }
+    }
+    return (items, bytes);
+  }
+
+  Stream<OperationStatus> _recursiveCopy(
+    String sourceStr,
+    String destStr,
+    CancellationToken token,
+    int totalBytes,
+    int totalItems,
+    int initialProcessedBytes,
+    int initialProcessedItems,
+  ) async* {
+      int processedBytes = initialProcessedBytes;
+      int processedItems = initialProcessedItems;
+      
+      final type = await FileSystemEntity.type(sourceStr);
+      
+      if (type == FileSystemEntityType.directory) {
+          await Directory(destStr).create(recursive: true);
+          processedItems++;
+          yield OperationStatus(
+            totalBytes: totalBytes,
+            processedBytes: processedBytes,
+            totalItems: totalItems,
+            processedItems: processedItems,
+            currentItem: p.basename(sourceStr),
+          );
+
+          await for (final entity in Directory(sourceStr).list(recursive: false)) {
+              if (token.isCancelled) return;
+              final newDest = p.join(destStr, p.basename(entity.path));
+              await for (final status in _recursiveCopy(
+                  entity.path, 
+                  newDest, 
+                  token, 
+                  totalBytes, 
+                  totalItems, 
+                  processedBytes, 
+                  processedItems
+              )) {
+                  yield status;
+                  processedBytes = status.processedBytes;
+                  processedItems = status.processedItems;
+              }
+          }
+      } else if (type == FileSystemEntityType.file) {
+          final file = File(sourceStr);
+          // Create streams
+          final inputStream = file.openRead();
+          final outputSink = File(destStr).openWrite();
+          
+          try {
+             await for (final chunk in inputStream) {
+                 if (token.isCancelled) {
+                     await outputSink.close();
+                     await File(destStr).delete(); // Cleanup partial
+                     return;
+                 }
+                 outputSink.add(chunk);
+                 processedBytes += chunk.length;
+                 
+                  yield OperationStatus(
+                    totalBytes: totalBytes,
+                    processedBytes: processedBytes,
+                    totalItems: totalItems,
+                    processedItems: processedItems,
+                    currentItem: p.basename(sourceStr),
+                  );
+             }
+             await outputSink.flush();
+             await outputSink.close();
+             processedItems++;
+             yield OperationStatus(
+                    totalBytes: totalBytes,
+                    processedBytes: processedBytes,
+                    totalItems: totalItems,
+                    processedItems: processedItems,
+                    currentItem: p.basename(sourceStr),
+             );
+          } catch(e) {
+              await outputSink.close();
+              rethrow;
+          }
+      }
   }
 
   @override
