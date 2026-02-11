@@ -10,9 +10,9 @@ final settingsServiceProvider = Provider<SettingsService>((ref) {
 // User settings state provider
 final userSettingsProvider =
     StateNotifierProvider<SettingsController, UserSettings>((ref) {
-  final service = ref.read(settingsServiceProvider);
-  return SettingsController(service);
-});
+      final service = ref.read(settingsServiceProvider);
+      return SettingsController(service);
+    });
 
 class SettingsController extends StateNotifier<UserSettings> {
   final SettingsService _service;
@@ -46,5 +46,15 @@ class SettingsController extends StateNotifier<UserSettings> {
   void setPanelSplitRatio(double ratio) {
     state = state.copyWith(panelSplitRatio: ratio);
     save(); // Auto-save
+  }
+
+  /// Update font size
+  void setFontSize(double size) {
+    // Clamp font size to reasonable limits (e.g., 8.0 to 32.0)
+    final newSize = size.clamp(8.0, 32.0);
+    if (state.fontSize != newSize) {
+      state = state.copyWith(fontSize: newSize);
+      save(); // Auto-save
+    }
   }
 }
