@@ -13,6 +13,7 @@ class PanelState {
   final bool sortAscending;
   final Set<String> selectedItems;
   final int focusedIndex; // Index of focused item for keyboard navigation
+  final String? editingPath; // Path of the item currently being edited
 
   const PanelState({
     this.currentPath = '',
@@ -21,6 +22,7 @@ class PanelState {
     this.sortAscending = true,
     this.selectedItems = const {},
     this.focusedIndex = -1, // -1 means no focus
+    this.editingPath,
   });
 
   PanelState copyWith({
@@ -30,6 +32,7 @@ class PanelState {
     bool? sortAscending,
     Set<String>? selectedItems,
     int? focusedIndex,
+    String? editingPath,
   }) {
     return PanelState(
       currentPath: currentPath ?? this.currentPath,
@@ -38,6 +41,23 @@ class PanelState {
       sortAscending: sortAscending ?? this.sortAscending,
       selectedItems: selectedItems ?? this.selectedItems,
       focusedIndex: focusedIndex ?? this.focusedIndex,
+      // If editingPath is passed as null explicitly (to clear it), we might need a different approach
+      // or just assume if it's passed it overrides.
+      // Standard copyWith pattern:
+      editingPath: editingPath ?? this.editingPath,
+    );
+  }
+
+  // Helper to clear editing path
+  PanelState clearEditing() {
+      return PanelState(
+      currentPath: currentPath,
+      items: items,
+      sortColumn: sortColumn,
+      sortAscending: sortAscending,
+      selectedItems: selectedItems,
+      focusedIndex: focusedIndex,
+      editingPath: null,
     );
   }
 }

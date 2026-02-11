@@ -231,6 +231,39 @@ class PanelController extends StateNotifier<PanelState> {
     }
   }
 
+  void startRenaming() {
+    if (state.focusedIndex >= 0 && state.focusedIndex < state.items.length) {
+      final item = state.items[state.focusedIndex];
+      if (!item.isParentDetails) {
+        state = state.copyWith(editingPath: item.path);
+      }
+    }
+  }
+
+  void cancelRenaming() {
+    state = state.clearEditing();
+  }
+
+  Future<void> renameItem(String newName) async {
+    final editingPath = state.editingPath;
+    if (editingPath == null) return;
+
+    try {
+      final parent = p.dirname(editingPath);
+      final newPath = p.join(parent, newName);
+      if (newPath != editingPath) {
+         await _repository.renameItem(editingPath, newPath);
+         await loadPath(state.currentPath);
+      }
+    } catch (e) {
+      debugPrint('Error renaming item: $e');
+    } finally {
+       state = state.clearEditing();
+    }
+  }
+
+
+
   Future<void> deleteSelectedItems({required bool permanent}) async {
     final selectedPaths = state.selectedItems.toList();
     if (selectedPaths.isEmpty &&

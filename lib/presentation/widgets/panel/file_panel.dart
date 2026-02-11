@@ -4,6 +4,7 @@ import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/panel/path_editor_dialog.dart';
+import 'package:fima/presentation/widgets/panel/rename_field.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -344,14 +345,28 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                           ),
                           Expanded(
                             flex: 3,
-                            child: Text(
-                              item.name,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: textColor,
-                                fontSize: fontSize,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            child: item.path == panelState.editingPath
+                                ? RenameField(
+                                    initialValue: item.name,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: textColor,
+                                      fontSize: fontSize,
+                                    ),
+                                    onSubmitted: (newName) {
+                                      controller.renameItem(newName);
+                                    },
+                                    onCancel: () {
+                                      controller.cancelRenaming();
+                                    },
+                                  )
+                                : Text(
+                                    item.name,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: textColor,
+                                      fontSize: fontSize,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                           ),
                           Expanded(
                             flex: 1,

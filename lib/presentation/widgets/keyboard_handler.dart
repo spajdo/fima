@@ -29,6 +29,13 @@ class KeyboardHandler extends ConsumerWidget {
         final panelController = ref.read(
           panelStateProvider(activePanelId).notifier,
         );
+        final currentPanelState = ref.read(panelStateProvider(activePanelId));
+
+        // If renaming is in progress, disable all keyboard shortcuts
+        // The RenameField will handle Escape, Enter, and text input.
+        if (currentPanelState.editingPath != null) {
+          return KeyEventResult.ignored;
+        }
 
         // Navigation keys
         if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
@@ -138,7 +145,11 @@ class KeyboardHandler extends ConsumerWidget {
           ref.read(operationStatusProvider.notifier).startMove();
           return KeyEventResult.handled;
         }
-
+        // F2 - Rename
+        if (event.logicalKey == LogicalKeyboardKey.f2) {
+          ref.read(panelStateProvider(activePanelId).notifier).startRenaming();
+          return KeyEventResult.handled;
+        }
 
 
 
