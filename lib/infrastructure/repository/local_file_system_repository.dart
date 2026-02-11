@@ -157,4 +157,67 @@ class LocalFileSystemRepository implements FileSystemRepository {
       }
     }
   }
+
+  @override
+  Future<void> moveToTrash(String path) async {
+    // Determine trash directory (Freedesktop.org spec)
+    // ~/.local/share/Trash
+    final home = Platform.environment['HOME'];
+    if (home == null) {
+      // Fallback to permanent delete if HOME not set (unlikely on Linux)
+      return deleteItem(path);
+    }
+
+    final trashDir = Directory(p.join(home, '.local', 'share', 'Trash'));
+    final filesDir = Directory(p.join(trashDir.path, 'files'));
+    final infoDir = Directory(p.join(trashDir.path, 'info'));
+
+    if (!await filesDir.exists()) {
+      await filesDir.create(recursive: true);
+    }
+    if (!await infoDir.exists()) {
+      await infoDir.create(recursive: true);
+    }
+
+    final entityName = p.basename(path);
+    String uniqueName = entityName;
+    int counter = 1;
+
+    // Ensure unique name in trash
+    while (await File(p.join(filesDir.path, uniqueName)).exists() ||
+        await Directory(p.join(filesDir.path, uniqueName)).exists()) {
+      final extension = p.extension(entityName);
+      final nameWithoutExtension = p.basenameWithoutExtension(entityName);
+      uniqueName = '$nameWithoutExtension.$counter$extension';
+      counter++;
+    }
+
+    final destinationPath = p.join(filesDir.path, uniqueName);
+    final infoPath = p.join(infoDir.path, '$uniqueName.trashinfo');
+
+    // Move the actual file/directory
+    await moveItem(path, destinationPath);
+
+    // Create .trashinfo file
+    // [Trash Info]
+    // Path=/original/path/to/file
+    // DeletionDate=YYYY-MM-DDThh:mm:ss
+    final now = DateTime.now().toUtc(); // Spec says usually RFC3339
+    // Format: YYYY-MM-DDThh:mm:ss (no timezone, assumed local/UTC? Spec says YYYYMMDDThhmmss)
+    // "The date and time are in the YYYY-MM-DDThh:mm:ss format."
+    final formattedDate =
+        '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}T'
+        '${now.hour.toString().padLeft(2, '0')}:'
+        '${now.minute.toString().padLeft(2, '0')}:'
+        '${now.second.toString().padLeft(2, '0')}';
+
+    final infoContent = '''[Trash Info]
+Path=$path
+DeletionDate=$formattedDate
+''';
+
+    await File(infoPath).writeAsString(infoContent);
+  }
 }

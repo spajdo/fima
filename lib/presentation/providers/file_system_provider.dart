@@ -210,4 +210,33 @@ class PanelController extends StateNotifier<PanelState> {
       state = state.copyWith(focusedIndex: index);
     }
   }
+  Future<void> deleteSelectedItems({required bool permanent}) async {
+    final selectedPaths = state.selectedItems.toList();
+    if (selectedPaths.isEmpty &&
+        state.focusedIndex >= 0 &&
+        state.focusedIndex < state.items.length) {
+      // If no selection, delete focused item
+      final item = state.items[state.focusedIndex];
+      if (!item.isParentDetails) {
+        selectedPaths.add(item.path);
+      }
+    }
+
+    if (selectedPaths.isEmpty) return;
+
+    for (final path in selectedPaths) {
+      try {
+        if (permanent) {
+          await _repository.deleteItem(path);
+        } else {
+          await _repository.moveToTrash(path);
+        }
+      } catch (e) {
+        debugPrint('Error deleting $path: $e');
+      }
+    }
+
+    // Refresh and clear selection
+    await loadPath(state.currentPath);
+  }
 }

@@ -12,4 +12,5 @@ abstract class FileSystemRepository {
   Future<void> renameItem(String oldPath, String newPath);
   Future<void> copyItem(String sourcePath, String destinationPath);
   Future<void> moveItem(String sourcePath, String destinationPath);
+  Future<void> moveToTrash(String path);
 }

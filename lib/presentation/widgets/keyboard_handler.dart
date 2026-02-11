@@ -1,6 +1,7 @@
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
+import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -81,11 +82,44 @@ class KeyboardHandler extends ConsumerWidget {
           return KeyEventResult.handled;
         }
 
-        // Ctrl+H - Toggle hidden files
         if (event.logicalKey == LogicalKeyboardKey.keyH &&
             (HardwareKeyboard.instance.isControlPressed ||
                 HardwareKeyboard.instance.isMetaPressed)) {
           ref.read(userSettingsProvider.notifier).toggleShowHiddenFiles();
+          return KeyEventResult.handled;
+        }
+
+        // Delete
+        if (event.logicalKey == LogicalKeyboardKey.delete) {
+          final isShiftPressed = HardwareKeyboard.instance.isShiftPressed;
+          final panelState = ref.read(panelStateProvider(activePanelId));
+
+          if (isShiftPressed) {
+            // Permanent delete - show dialog
+            // We need count of items to be deleted.
+            // If selection is empty, it's 1 (focused item), unless focused item is .. or empty
+            int count = panelState.selectedItems.length;
+            if (count == 0 &&
+                panelState.focusedIndex >= 0 &&
+                panelState.focusedIndex < panelState.items.length &&
+                !panelState.items[panelState.focusedIndex].isParentDetails) {
+              count = 1;
+            }
+
+            if (count > 0) {
+              showDialog(
+                context: context,
+                builder: (context) => DeleteConfirmationDialog(count: count),
+              ).then((confirmed) {
+                if (confirmed == true) {
+                  panelController.deleteSelectedItems(permanent: true);
+                }
+              });
+            }
+          } else {
+            // Move to trash - no confirmation
+            panelController.deleteSelectedItems(permanent: false);
+          }
           return KeyEventResult.handled;
         }
 
