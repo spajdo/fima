@@ -210,6 +210,27 @@ class PanelController extends StateNotifier<PanelState> {
       state = state.copyWith(focusedIndex: index);
     }
   }
+  Future<void> createDirectory(String name) async {
+    try {
+      final newPath = p.join(state.currentPath, name);
+      await _repository.createDirectory(newPath);
+      await loadPath(state.currentPath);
+      // Optional: Select the new directory?
+    } catch (e) {
+      debugPrint('Error creating directory: $e');
+    }
+  }
+
+  Future<void> createFile(String name) async {
+    try {
+      final newPath = p.join(state.currentPath, name);
+      await _repository.createFile(newPath);
+      await loadPath(state.currentPath);
+    } catch (e) {
+      debugPrint('Error creating file: $e');
+    }
+  }
+
   Future<void> deleteSelectedItems({required bool permanent}) async {
     final selectedPaths = state.selectedItems.toList();
     if (selectedPaths.isEmpty &&

@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
+import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -137,9 +140,131 @@ class KeyboardHandler extends ConsumerWidget {
         }
 
 
+
+
+        // F7 - Create Directory
+        if (event.logicalKey == LogicalKeyboardKey.f7) {
+          final panelState = ref.read(panelStateProvider(activePanelId));
+          // If panel not ready or path empty, ignore
+          if (panelState.currentPath.isEmpty) return KeyEventResult.ignored;
+
+          showDialog(
+            context: context,
+            builder: (context) => const TextInputDialog(
+              title: 'Create Directory',
+              label: 'Directory Name',
+              okButtonLabel: 'Create',
+            ),
+          ).then((name) {
+            if (name != null && name.toString().isNotEmpty) {
+              panelController.createDirectory(name.toString());
+            }
+          });
+          return KeyEventResult.handled;
+        }
+
+        // F8 - Create File
+        if (event.logicalKey == LogicalKeyboardKey.f8) {
+           final panelState = ref.read(panelStateProvider(activePanelId));
+          if (panelState.currentPath.isEmpty) return KeyEventResult.ignored;
+
+          showDialog(
+            context: context,
+            builder: (context) => const TextInputDialog(
+              title: 'Create File',
+              label: 'File Name',
+              okButtonLabel: 'Create',
+            ),
+          ).then((name) {
+            if (name != null && name.toString().isNotEmpty) {
+              panelController.createFile(name.toString());
+            }
+          });
+          return KeyEventResult.handled;
+        }
+
+        // F9 - Open Terminal
+        if (event.logicalKey == LogicalKeyboardKey.f9) {
+          final path = ref.read(panelStateProvider(activePanelId)).currentPath;
+          if (path.isNotEmpty) {
+             _openTerminal(path);
+          }
+          return KeyEventResult.handled;
+        }
+
+        // F10 - Open Default File Manager
+        if (event.logicalKey == LogicalKeyboardKey.f10) {
+           final path = ref.read(panelStateProvider(activePanelId)).currentPath;
+           if (path.isNotEmpty) {
+              _openFileManager(path);
+           }
+           return KeyEventResult.handled;
+        }
+
         return KeyEventResult.ignored;
       },
       child: child,
     );
+  }
+
+  Future<void> _openTerminal(String path) async {
+    // Linux generic way to open terminal
+    // Try generic emulator first, then specific ones
+    if (Platform.isLinux) {
+      try {
+        // Try x-terminal-emulator first (Debian/Ubuntu/standard alternative)
+        await Process.run('x-terminal-emulator', [], workingDirectory: path);
+      } catch (e) {
+        // Fallbacks
+        final terminals = ['gnome-terminal', 'konsole', 'xfce4-terminal', 'mate-terminal', 'terminator', 'xterm'];
+        for (final terminal in terminals) {
+          try {
+             // Most terminals accept working directory as is or need --working-directory
+             // But Process.run workingDirectory argument usually handles it if the terminal respects cwd
+             await Process.run(terminal, [], workingDirectory: path);
+             return; // Success
+          } catch (_) {
+             // Continue to next
+          }
+        }
+        debugPrint('Could not find a supported terminal to open.');
+      }
+    } else if (Platform.isMacOS) {
+        // Mac implementation
+        try {
+            await Process.run('open', ['-a', 'Terminal', path]);
+        } catch (e) {
+            debugPrint('Error opening Mac terminal: $e');
+        }
+    } else if (Platform.isWindows) {
+        // Windows implementation
+        try {
+            await Process.run('cmd', ['/K', 'start', 'cd', '/d', path], runInShell: true);
+        } catch (e) {
+             debugPrint('Error opening Windows terminal: $e');
+        }
+    }
+  }
+
+  Future<void> _openFileManager(String path) async {
+      if (Platform.isLinux) {
+          try {
+              await Process.run('xdg-open', [path]);
+          } catch (e) {
+              debugPrint('Error opening file manager: $e');
+          }
+      } else if (Platform.isMacOS) {
+          try {
+              await Process.run('open', [path]);
+          } catch (e) {
+              debugPrint('Error opening file manager: $e');
+          }
+      } else if (Platform.isWindows) {
+           try {
+              await Process.run('explorer', [path]);
+          } catch (e) {
+              debugPrint('Error opening file manager: $e');
+          }
+      }
   }
 }
