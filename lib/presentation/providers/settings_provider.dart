@@ -63,4 +63,40 @@ class SettingsController extends StateNotifier<UserSettings> {
     state = state.copyWith(showHiddenFiles: !state.showHiddenFiles);
     save(); // Auto-save
   }
+
+  /// Update window size and position
+  void updateWindowState({
+    double? width,
+    double? height,
+    double? x,
+    double? y,
+    bool? maximized,
+  }) {
+    state = state.copyWith(
+      windowWidth: width,
+      windowHeight: height,
+      windowX: x,
+      windowY: y,
+      windowMaximized: maximized,
+    );
+    save(); // Auto-save
+  }
+
+  /// Update window size only
+  void updateWindowSize(double width, double height) {
+    state = state.copyWith(windowWidth: width, windowHeight: height);
+    save(); // Auto-save
+  }
+
+  /// Update window position only
+  void updateWindowPosition(double x, double y) {
+    state = state.copyWith(windowX: x, windowY: y);
+    save(); // Auto-save
+  }
+
+  /// Update window maximized state
+  void updateWindowMaximized(bool maximized) {
+    state = state.copyWith(windowMaximized: maximized);
+    save(); // Auto-save
+  }
 }
