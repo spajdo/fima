@@ -58,6 +58,12 @@ class PanelController extends StateNotifier<PanelState> {
     }
   }
 
+  Future<void> refresh() async {
+    if (state.currentPath.isNotEmpty) {
+      await loadPath(state.currentPath);
+    }
+  }
+
   void _savePath(String path) {
     try {
       if (_panelId == 'left') {

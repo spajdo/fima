@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -145,6 +146,19 @@ class _WindowManagerInitializerState
   void onWindowClose() async {
     // Save final window state before closing
     await _saveWindowState();
+  }
+
+  @override
+  void onWindowFocus() {
+    debugPrint('WindowManagerInitializer: onWindowFocus triggered');
+    // Refresh both panels when window gains focus
+    // We need to use listen to provider? No, just read is fine for triggering action.
+    try {
+      ref.read(panelStateProvider('left').notifier).refresh();
+      ref.read(panelStateProvider('right').notifier).refresh();
+    } catch (e) {
+      debugPrint('Error refreshing panels on focus: $e');
+    }
   }
 
   @override
