@@ -120,6 +120,7 @@ class KeyboardHandler extends ConsumerWidget {
             if (count > 0) {
               showDialog(
                 context: context,
+                barrierColor: Colors.transparent,
                 builder: (context) => DeleteConfirmationDialog(count: count),
               ).then((confirmed) {
                 if (confirmed == true) {
@@ -161,6 +162,7 @@ class KeyboardHandler extends ConsumerWidget {
 
           showDialog(
             context: context,
+            barrierColor: Colors.transparent,
             builder: (context) => const TextInputDialog(
               title: 'Create Directory',
               label: 'Directory Name',
@@ -181,6 +183,7 @@ class KeyboardHandler extends ConsumerWidget {
 
           showDialog(
             context: context,
+            barrierColor: Colors.transparent,
             builder: (context) => const TextInputDialog(
               title: 'Create File',
               label: 'File Name',

@@ -1,3 +1,4 @@
+import 'package:fima/presentation/widgets/popups/base_dialog.dart';
 import 'package:flutter/material.dart';
 
 class TextInputDialog extends StatefulWidget {
@@ -35,14 +36,13 @@ class _TextInputDialogState extends State<TextInputDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return BaseDialog(
       title: Text(widget.title),
       content: TextField(
         controller: _controller,
         autofocus: true,
         decoration: InputDecoration(
           labelText: widget.label,
-          border: const OutlineInputBorder(),
         ),
         onSubmitted: (_) => _submit(),
       ),

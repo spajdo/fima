@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:fima/presentation/widgets/popups/base_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
@@ -118,73 +119,71 @@ class _PathEditorDialogState extends State<PathEditorDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     
-    return AlertDialog(
+    return BaseDialog(
+      width: 500,
       title: const Text('Go to Path'),
-      content: SizedBox(
-        width: 500,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: _controller,
-              autofocus: true,
-              decoration: InputDecoration(
-                labelText: 'Directory Path',
-                hintText: '/path/to/directory',
-                errorText: _errorMessage,
-                prefixIcon: const Icon(Icons.folder_open),
-                border: const OutlineInputBorder(),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: 'Directory Path',
+              hintText: '/path/to/directory',
+              errorText: _errorMessage,
+              prefixIcon: const Icon(Icons.folder_open),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
+            ),
+            onSubmitted: (_) => _validateAndNavigate(),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              TextButton.icon(
+                onPressed: _navigateToHome,
+                icon: const Icon(Icons.home, size: 16),
+                label: const Text('Home'),
               ),
-              onSubmitted: (_) => _validateAndNavigate(),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                TextButton.icon(
-                  onPressed: _navigateToHome,
-                  icon: const Icon(Icons.home, size: 16),
-                  label: const Text('Home'),
-                ),
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  onPressed: _navigateToParent,
-                  icon: const Icon(Icons.arrow_upward, size: 16),
-                  label: const Text('Parent'),
-                ),
-              ],
-            ),
-            if (_errorMessage != null) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.error_outline,
-                      color: theme.colorScheme.error,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _errorMessage!,
-                        style: TextStyle(
-                          color: theme.colorScheme.onErrorContainer,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: _navigateToParent,
+                icon: const Icon(Icons.arrow_upward, size: 16),
+                label: const Text('Parent'),
               ),
             ],
+          ),
+          if (_errorMessage != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(8.0),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    color: theme.colorScheme.error,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _errorMessage!,
+                      style: TextStyle(
+                        color: theme.colorScheme.onErrorContainer,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
-        ),
+        ],
       ),
       actions: [
         TextButton(

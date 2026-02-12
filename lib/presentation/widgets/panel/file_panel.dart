@@ -150,6 +150,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
 
     showDialog(
       context: context,
+      barrierColor: Colors.transparent,
       builder: (context) => PathEditorDialog(
         currentPath: currentPath,
         onPathChanged: (newPath) {

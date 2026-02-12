@@ -1,3 +1,4 @@
+import 'package:fima/presentation/widgets/popups/base_dialog.dart';
 import 'package:flutter/material.dart';
 
 class DeleteConfirmationDialog extends StatelessWidget {
@@ -7,7 +8,7 @@ class DeleteConfirmationDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return BaseDialog(
       title: const Text('Delete Permanently?'),
       content: Text(
         'Are you sure you want to permanently delete $count ${count == 1 ? 'item' : 'items'}?\n'

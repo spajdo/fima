@@ -1,10 +1,8 @@
-import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/bottom_status_bar.dart';
 import 'package:fima/presentation/widgets/panel/file_panel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:window_manager/window_manager.dart';
 
 class MainScreen extends ConsumerStatefulWidget {
   const MainScreen({super.key});
