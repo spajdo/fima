@@ -5,6 +5,7 @@ import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
+import 'package:fima/presentation/widgets/popups/omni_dialog.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -213,6 +214,23 @@ class KeyboardHandler extends ConsumerWidget {
               _openFileManager(path);
            }
            return KeyEventResult.handled;
+        }
+
+        // Omni Dialog (Ctrl + P or Ctrl + Shift + P)
+        if (event.logicalKey == LogicalKeyboardKey.keyP &&
+            (HardwareKeyboard.instance.isControlPressed ||
+                HardwareKeyboard.instance.isMetaPressed)) {
+          final isShift = HardwareKeyboard.instance.isShiftPressed;
+          
+          showDialog(
+            context: context,
+            barrierColor: Colors.transparent, // Remove barrier color
+            builder: (context) => OmniDialog(
+              initialText: isShift ? '>' : '',
+            ),
+          );
+          
+          return KeyEventResult.handled;
         }
 
         return KeyEventResult.ignored;

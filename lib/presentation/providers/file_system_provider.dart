@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path/path.dart' as p;
+import 'dart:io';
 
 final fileSystemRepositoryProvider = Provider<FileSystemRepository>((ref) {
   return LocalFileSystemRepository();
@@ -301,5 +302,68 @@ class PanelController extends StateNotifier<PanelState> {
 
     // Refresh and clear selection
     await loadPath(state.currentPath);
+  }
+
+  Future<void> openTerminal(String path) async {
+    // Linux generic way to open terminal
+    // Try generic emulator first, then specific ones
+    if (Platform.isLinux) {
+      try {
+        // Try x-terminal-emulator first (Debian/Ubuntu/standard alternative)
+        await Process.run('x-terminal-emulator', [], workingDirectory: path);
+      } catch (e) {
+        // Fallbacks
+        final terminals = ['gnome-terminal', 'konsole', 'xfce4-terminal', 'mate-terminal', 'terminator', 'xterm'];
+        for (final terminal in terminals) {
+          try {
+             // Most terminals accept working directory as is or need --working-directory
+             // But Process.run workingDirectory argument usually handles it if the terminal respects cwd
+             // For gnome-terminal we might need more arguments?
+             // Process.run usually works.
+             await Process.run(terminal, [], workingDirectory: path);
+             return; // Success
+          } catch (_) {
+             // Continue to next
+          }
+        }
+        debugPrint('Could not find a supported terminal to open.');
+      }
+    } else if (Platform.isMacOS) {
+        // Mac implementation
+        try {
+            await Process.run('open', ['-a', 'Terminal', path]);
+        } catch (e) {
+            debugPrint('Error opening Mac terminal: $e');
+        }
+    } else if (Platform.isWindows) {
+        // Windows implementation
+        try {
+            await Process.run('cmd', ['/K', 'start', 'cd', '/d', path], runInShell: true);
+        } catch (e) {
+             debugPrint('Error opening Windows terminal: $e');
+        }
+    }
+  }
+
+  Future<void> openFileManager(String path) async {
+    if (Platform.isLinux) {
+      try {
+        await Process.run('xdg-open', [path]);
+      } catch (e) {
+        debugPrint('Error opening file manager on Linux: $e');
+      }
+    } else if (Platform.isMacOS) {
+      try {
+        await Process.run('open', [path]);
+      } catch (e) {
+        debugPrint('Error opening file manager on macOS: $e');
+      }
+    } else if (Platform.isWindows) {
+      try {
+        await Process.run('explorer', [path]);
+      } catch (e) {
+        debugPrint('Error opening file manager on Windows: $e');
+      }
+    }
   }
 }
