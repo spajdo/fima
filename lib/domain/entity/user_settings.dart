@@ -1,3 +1,5 @@
+import 'package:fima/domain/entity/path_index_entry.dart';
+
 class UserSettings {
   final String leftPanelPath;
   final String rightPanelPath;
@@ -9,6 +11,8 @@ class UserSettings {
   final double? windowX;
   final double? windowY;
   final bool windowMaximized;
+  final List<PathIndexEntry> pathIndexes;
+  final int maxPathIndexes;
 
   const UserSettings({
     required this.leftPanelPath,
@@ -21,6 +25,8 @@ class UserSettings {
     this.windowX,
     this.windowY,
     this.windowMaximized = false,
+    this.pathIndexes = const [],
+    this.maxPathIndexes = 50,
   });
 
   // Default settings
@@ -36,6 +42,8 @@ class UserSettings {
       windowX: null, // Will be centered by system
       windowY: null, // Will be centered by system
       windowMaximized: false,
+      pathIndexes: [],
+      maxPathIndexes: 50,
     );
   }
 
@@ -52,6 +60,10 @@ class UserSettings {
       windowX: (json['windowX'] as num?)?.toDouble(),
       windowY: (json['windowY'] as num?)?.toDouble(),
       windowMaximized: json['windowMaximized'] as bool? ?? false,
+      pathIndexes: (json['pathIndexes'] as List? ?? [])
+          .map((e) => PathIndexEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      maxPathIndexes: json['maxPathIndexes'] as int? ?? 50,
     );
   }
 
@@ -68,6 +80,8 @@ class UserSettings {
       'windowX': windowX,
       'windowY': windowY,
       'windowMaximized': windowMaximized,
+      'pathIndexes': pathIndexes.map((e) => e.toJson()).toList(),
+      'maxPathIndexes': maxPathIndexes,
     };
   }
 
@@ -83,6 +97,8 @@ class UserSettings {
     double? windowX,
     double? windowY,
     bool? windowMaximized,
+    List<PathIndexEntry>? pathIndexes,
+    int? maxPathIndexes,
   }) {
     return UserSettings(
       leftPanelPath: leftPanelPath ?? this.leftPanelPath,
@@ -95,6 +111,8 @@ class UserSettings {
       windowX: windowX ?? this.windowX,
       windowY: windowY ?? this.windowY,
       windowMaximized: windowMaximized ?? this.windowMaximized,
+      pathIndexes: pathIndexes ?? this.pathIndexes,
+      maxPathIndexes: maxPathIndexes ?? this.maxPathIndexes,
     );
   }
 }

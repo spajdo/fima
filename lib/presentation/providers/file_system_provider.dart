@@ -52,6 +52,9 @@ class PanelController extends StateNotifier<PanelState> {
 
       // Save path to settings
       _savePath(path);
+      
+      // Index path
+      _ref.read(userSettingsProvider.notifier).indexPath(path);
     } catch (e) {
       // Handle error (e.g., access denied, path does not exist)
       debugPrint('Error loading path $path: $e');

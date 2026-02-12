@@ -1,3 +1,4 @@
+import 'package:fima/domain/entity/path_index_entry.dart';
 import 'package:fima/domain/entity/user_settings.dart';
 import 'package:fima/infrastructure/service/settings_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -97,6 +98,41 @@ class SettingsController extends StateNotifier<UserSettings> {
   /// Update window maximized state
   void updateWindowMaximized(bool maximized) {
     state = state.copyWith(windowMaximized: maximized);
+    save(); // Auto-save
+  }
+
+  /// Add or update a path in the index
+  void indexPath(String path) {
+    if (path.isEmpty) return;
+
+    final List<PathIndexEntry> newIndexes = List.from(state.pathIndexes);
+    final index = newIndexes.indexWhere((e) => e.path == path);
+
+    if (index != -1) {
+      // Update existing entry
+      final entry = newIndexes[index];
+      newIndexes[index] = entry.copyWith(
+        visitsCount: entry.visitsCount + 1,
+        lastVisited: DateTime.now(),
+      );
+    } else {
+      // Add new entry
+      newIndexes.add(PathIndexEntry(
+        path: path,
+        visitsCount: 1,
+        lastVisited: DateTime.now(),
+      ));
+    }
+
+    // Sort by visitsCount (descending)
+    newIndexes.sort((a, b) => b.visitsCount.compareTo(a.visitsCount));
+
+    // Prune if exceeds maxPathIndexes
+    if (newIndexes.length > state.maxPathIndexes) {
+      newIndexes.removeRange(state.maxPathIndexes, newIndexes.length);
+    }
+
+    state = state.copyWith(pathIndexes: newIndexes);
     save(); // Auto-save
   }
 }
