@@ -1,4 +1,5 @@
 import 'package:fima/domain/entity/path_index_entry.dart';
+import 'package:fima/domain/entity/workspace.dart';
 
 class UserSettings {
   final String leftPanelPath;
@@ -13,6 +14,7 @@ class UserSettings {
   final bool windowMaximized;
   final List<PathIndexEntry> pathIndexes;
   final int maxPathIndexes;
+  final List<Workspace> workspaces;
 
   const UserSettings({
     required this.leftPanelPath,
@@ -27,6 +29,7 @@ class UserSettings {
     this.windowMaximized = false,
     this.pathIndexes = const [],
     this.maxPathIndexes = 50,
+    this.workspaces = const [],
   });
 
   // Default settings
@@ -44,6 +47,7 @@ class UserSettings {
       windowMaximized: false,
       pathIndexes: [],
       maxPathIndexes: 50,
+      workspaces: [],
     );
   }
 
@@ -64,6 +68,9 @@ class UserSettings {
           .map((e) => PathIndexEntry.fromJson(e as Map<String, dynamic>))
           .toList(),
       maxPathIndexes: json['maxPathIndexes'] as int? ?? 50,
+      workspaces: (json['workspaces'] as List? ?? [])
+          .map((e) => Workspace.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 
@@ -82,6 +89,7 @@ class UserSettings {
       'windowMaximized': windowMaximized,
       'pathIndexes': pathIndexes.map((e) => e.toJson()).toList(),
       'maxPathIndexes': maxPathIndexes,
+      'workspaces': workspaces.map((e) => e.toJson()).toList(),
     };
   }
 
@@ -99,6 +107,7 @@ class UserSettings {
     bool? windowMaximized,
     List<PathIndexEntry>? pathIndexes,
     int? maxPathIndexes,
+    List<Workspace>? workspaces,
   }) {
     return UserSettings(
       leftPanelPath: leftPanelPath ?? this.leftPanelPath,
@@ -113,6 +122,7 @@ class UserSettings {
       windowMaximized: windowMaximized ?? this.windowMaximized,
       pathIndexes: pathIndexes ?? this.pathIndexes,
       maxPathIndexes: maxPathIndexes ?? this.maxPathIndexes,
+      workspaces: workspaces ?? this.workspaces,
     );
   }
 }

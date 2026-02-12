@@ -1,5 +1,6 @@
 import 'package:fima/domain/entity/path_index_entry.dart';
 import 'package:fima/domain/entity/user_settings.dart';
+import 'package:fima/domain/entity/workspace.dart';
 import 'package:fima/infrastructure/service/settings_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -117,11 +118,9 @@ class SettingsController extends StateNotifier<UserSettings> {
       );
     } else {
       // Add new entry
-      newIndexes.add(PathIndexEntry(
-        path: path,
-        visitsCount: 1,
-        lastVisited: DateTime.now(),
-      ));
+      newIndexes.add(
+        PathIndexEntry(path: path, visitsCount: 1, lastVisited: DateTime.now()),
+      );
     }
 
     // Sort by visitsCount (descending)
@@ -134,5 +133,34 @@ class SettingsController extends StateNotifier<UserSettings> {
 
     state = state.copyWith(pathIndexes: newIndexes);
     save(); // Auto-save
+  }
+
+  /// Add a new workspace
+  void addWorkspace(Workspace workspace) {
+    final List<Workspace> newWorkspaces = List.from(state.workspaces);
+    // Remove existing workspace with same name
+    newWorkspaces.removeWhere((w) => w.name == workspace.name);
+    newWorkspaces.add(workspace);
+    state = state.copyWith(workspaces: newWorkspaces);
+    save();
+  }
+
+  /// Update a workspace
+  void updateWorkspace(String oldName, Workspace workspace) {
+    final List<Workspace> newWorkspaces = List.from(state.workspaces);
+    final index = newWorkspaces.indexWhere((w) => w.name == oldName);
+    if (index != -1) {
+      newWorkspaces[index] = workspace;
+      state = state.copyWith(workspaces: newWorkspaces);
+      save();
+    }
+  }
+
+  /// Delete a workspace by name
+  void deleteWorkspace(String name) {
+    final List<Workspace> newWorkspaces = List.from(state.workspaces);
+    newWorkspaces.removeWhere((w) => w.name == name);
+    state = state.copyWith(workspaces: newWorkspaces);
+    save();
   }
 }

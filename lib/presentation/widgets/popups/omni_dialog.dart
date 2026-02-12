@@ -1,12 +1,18 @@
 import 'package:fima/domain/entity/app_action.dart';
 import 'package:fima/domain/entity/path_index_entry.dart';
+import 'package:fima/domain/entity/workspace.dart';
 import 'package:fima/presentation/providers/action_provider.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
+import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+enum OmniMode { path, action, workspace }
+
+enum WorkspaceAction { none, edit, delete }
 
 class OmniDialog extends ConsumerStatefulWidget {
   final String initialText;
@@ -24,13 +30,29 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
 
   List<PathIndexEntry> _filteredPaths = [];
   List<AppAction> _filteredActions = [];
+  List<Workspace> _filteredWorkspaces = [];
   int _selectedIndex = 0;
+  WorkspaceAction _focusedAction = WorkspaceAction.none;
+
+  OmniMode get _mode {
+    final text = _controller.text;
+    if (text.startsWith('w ')) return OmniMode.workspace;
+    if (text.startsWith('>')) return OmniMode.action;
+    return OmniMode.path;
+  }
+
+  String get _workspaceQuery {
+    final text = _controller.text;
+    if (_mode == OmniMode.workspace) {
+      return text.substring(2).toLowerCase();
+    }
+    return '';
+  }
 
   @override
   void initState() {
     super.initState();
 
-    // Set text AND cursor position together — no intermediate "select all" state
     _controller = TextEditingController.fromValue(
       TextEditingValue(
         text: widget.initialText,
@@ -41,7 +63,6 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
     _focusNode = FocusNode();
     _focusNode.requestFocus();
 
-    // Initial filter + no postFrameCallback needed for cursor fix anymore
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateFilter();
     });
@@ -59,14 +80,11 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
     super.dispose();
   }
 
-  bool get _isActionMode => _controller.text.startsWith('>');
-
   void _updateFilter() {
     final text = _controller.text;
 
-    if (_isActionMode) {
+    if (_mode == OmniMode.action) {
       final query = text.substring(1).toLowerCase();
-      // Generate actions using the provider/generator
       final actions = ActionGenerator(context, ref).generate();
 
       setState(() {
@@ -74,6 +92,19 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
           return action.label.toLowerCase().contains(query);
         }).toList();
         _filteredPaths = [];
+        _filteredWorkspaces = [];
+        _selectedIndex = 0;
+      });
+    } else if (_mode == OmniMode.workspace) {
+      final query = _workspaceQuery;
+      final allWorkspaces = ref.read(userSettingsProvider).workspaces;
+
+      setState(() {
+        _filteredWorkspaces = allWorkspaces.where((workspace) {
+          return workspace.name.toLowerCase().contains(query);
+        }).toList();
+        _filteredPaths = [];
+        _filteredActions = [];
         _selectedIndex = 0;
       });
     } else {
@@ -82,51 +113,85 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
 
       setState(() {
         _filteredActions = [];
+        _filteredWorkspaces = [];
         _filteredPaths = allPaths.where((entry) {
           return entry.path.toLowerCase().contains(query);
         }).toList();
-        // Sort by visits count logic is already handled in provider/settings,
-        // but if filtering, we might want to keep that order or re-sort by relevance?
-        // For now, assume the list from settings is already sorted by visits.
-        // If query is present, we might want to prioritize "starts with" or exact matches?
-        // Keeping it simple for now: filter preserves order (likely sorted by visits).
         _selectedIndex = 0;
       });
     }
   }
 
+  void _handleSubmitWithAction() {
+    if (_mode == OmniMode.workspace && _focusedAction != WorkspaceAction.none) {
+      if (_selectedIndex < _filteredWorkspaces.length) {
+        final workspace = _filteredWorkspaces[_selectedIndex];
+        if (_focusedAction == WorkspaceAction.edit) {
+          _showRenameDialog(workspace);
+        } else if (_focusedAction == WorkspaceAction.delete) {
+          _deleteWorkspace(workspace);
+        }
+      }
+      return;
+    }
+    _handleSubmit();
+  }
+
   void _handleSubmit() {
-    if (_isActionMode) {
+    if (_mode == OmniMode.action) {
       if (_filteredActions.isNotEmpty) {
         final action = _filteredActions[_selectedIndex];
-        Navigator.of(context).pop(); // Close dialog first
+        Navigator.of(context).pop();
         action.callback();
+      }
+    } else if (_mode == OmniMode.workspace) {
+      if (_focusedAction == WorkspaceAction.none &&
+          _filteredWorkspaces.isNotEmpty) {
+        final workspace = _filteredWorkspaces[_selectedIndex];
+        Navigator.of(context).pop();
+        _loadWorkspace(workspace);
       }
     } else {
       if (_filteredPaths.isNotEmpty) {
         final path = _filteredPaths[_selectedIndex].path;
-        Navigator.of(context).pop(); // Close dialog first
-
-        // Navigate active panel to path
-        final focusController = ref.read(focusProvider.notifier);
-        final activePanelId = focusController.getActivePanelId();
-        final panelController = ref.read(
-          panelStateProvider(activePanelId).notifier,
-        );
-        panelController.loadPath(path);
-      } else if (_controller.text.isNotEmpty && !_isActionMode) {
-        // Allow entering custom path
+        Navigator.of(context).pop();
+        _navigateToPath(path);
+      } else if (_controller.text.isNotEmpty) {
         final path = _controller.text;
-        Navigator.of(context).pop(); // Close dialog first
-
-        final focusController = ref.read(focusProvider.notifier);
-        final activePanelId = focusController.getActivePanelId();
-        final panelController = ref.read(
-          panelStateProvider(activePanelId).notifier,
-        );
-        panelController.loadPath(path);
+        Navigator.of(context).pop();
+        _navigateToPath(path);
       }
     }
+  }
+
+  void _navigateToPath(String path) {
+    final focusController = ref.read(focusProvider.notifier);
+    final activePanelId = focusController.getActivePanelId();
+    final panelController = ref.read(
+      panelStateProvider(activePanelId).notifier,
+    );
+    panelController.loadPath(path);
+  }
+
+  void _loadWorkspace(Workspace workspace) {
+    ref
+        .read(panelStateProvider('left').notifier)
+        .loadPath(workspace.leftPanelPath, addToVisited: false);
+    ref
+        .read(panelStateProvider('right').notifier)
+        .loadPath(workspace.rightPanelPath, addToVisited: false);
+  }
+
+  void _deleteWorkspace(Workspace workspace) {
+    ref.read(userSettingsProvider.notifier).deleteWorkspace(workspace.name);
+    _updateFilter();
+  }
+
+  void _renameWorkspace(Workspace workspace, String newName) {
+    ref
+        .read(userSettingsProvider.notifier)
+        .updateWorkspace(workspace.name, workspace.copyWith(name: newName));
+    _updateFilter();
   }
 
   void _scrollToSelected(double itemHeight) {
@@ -145,9 +210,10 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // Calculate height based on items, maxing out at some point
-    final itemCount = _isActionMode
+    final itemCount = _mode == OmniMode.action
         ? _filteredActions.length
+        : _mode == OmniMode.workspace
+        ? _filteredWorkspaces.length
         : _filteredPaths.length;
     final itemHeight = 48.0;
     final maxListHeight = 300.0;
@@ -158,9 +224,6 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
       insetPadding: const EdgeInsets.all(24),
       alignment: Alignment.topCenter,
       child: Container(
-        width:
-            600, // Fixed width or responsive? Requirement says "input box will be from side to side"
-        // "side to side" of the dialog. Use max width constraint.
         constraints: const BoxConstraints(maxWidth: 800),
         child: Material(
           elevation: 24,
@@ -169,7 +232,6 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Input field
               Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: CallbackShortcuts(
@@ -180,6 +242,7 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                           0,
                           itemCount - 1,
                         );
+                        _focusedAction = WorkspaceAction.none;
                         _scrollToSelected(itemHeight);
                       });
                     },
@@ -189,34 +252,67 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                           0,
                           itemCount - 1,
                         );
+                        _focusedAction = WorkspaceAction.none;
                         _scrollToSelected(itemHeight);
                       });
                     },
-                    const SingleActivator(LogicalKeyboardKey.enter):
-                        _handleSubmit,
+                    const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
+                      if (_mode == OmniMode.workspace &&
+                          _selectedIndex < _filteredWorkspaces.length) {
+                        setState(() {
+                          if (_focusedAction == WorkspaceAction.none) {
+                            _focusedAction = WorkspaceAction.delete;
+                          } else if (_focusedAction == WorkspaceAction.delete) {
+                            _focusedAction = WorkspaceAction.edit;
+                          } else {
+                            _focusedAction = WorkspaceAction.none;
+                          }
+                        });
+                      }
+                    },
+                    const SingleActivator(LogicalKeyboardKey.arrowRight): () {
+                      if (_mode == OmniMode.workspace &&
+                          _selectedIndex < _filteredWorkspaces.length) {
+                        setState(() {
+                          if (_focusedAction == WorkspaceAction.none) {
+                            _focusedAction = WorkspaceAction.edit;
+                          } else if (_focusedAction == WorkspaceAction.edit) {
+                            _focusedAction = WorkspaceAction.delete;
+                          } else {
+                            _focusedAction = WorkspaceAction.none;
+                          }
+                        });
+                      }
+                    },
+                    const SingleActivator(LogicalKeyboardKey.enter): () {
+                      _handleSubmitWithAction();
+                    },
                   },
                   child: TextField(
                     controller: _controller,
                     focusNode: _focusNode,
                     selectAllOnFocus: false,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       border: InputBorder.none,
-                      hintText: 'Type to search...',
-                      contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                      hintText: _mode == OmniMode.workspace
+                          ? 'Search workspaces...'
+                          : 'Type to search...',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      prefixIcon: _mode == OmniMode.workspace
+                          ? const Icon(Icons.work)
+                          : null,
                     ),
                     style: const TextStyle(fontSize: 18),
-                    // We handle keys manually via CallbackShortcuts or FocusNode events because
-                    // TextField consumes arrow keys for cursor movement.
-                    // We want arrows to navigate list.
-                    // But left/right should still move cursor?
-                    // Up/Down should move list selection.
                   ),
                 ),
               ),
 
               if (itemCount > 0) const Divider(height: 1),
 
-              // List
               if (itemCount > 0)
                 SizedBox(
                   height: listHeight,
@@ -227,7 +323,7 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                     itemBuilder: (context, index) {
                       final isSelected = index == _selectedIndex;
 
-                      if (_isActionMode) {
+                      if (_mode == OmniMode.action) {
                         final action = _filteredActions[index];
                         return _buildListItem(
                           label: action.label,
@@ -238,11 +334,32 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                             _handleSubmit();
                           },
                         );
+                      } else if (_mode == OmniMode.workspace) {
+                        final workspace = _filteredWorkspaces[index];
+                        return _buildWorkspaceItem(
+                          workspace: workspace,
+                          isSelected: isSelected,
+                          focusedAction: index == _selectedIndex
+                              ? _focusedAction
+                              : WorkspaceAction.none,
+                          onTap: () {
+                            setState(() {
+                              _selectedIndex = index;
+                              _focusedAction = WorkspaceAction.none;
+                            });
+                            _handleSubmit();
+                          },
+                          onEdit: () {
+                            _showRenameDialog(workspace);
+                          },
+                          onDelete: () {
+                            _deleteWorkspace(workspace);
+                          },
+                        );
                       } else {
                         final entry = _filteredPaths[index];
                         return _buildListItem(
                           label: entry.path,
-                          // subtitle: 'Visits: ${entry.visitsCount}', // Optional debug info
                           isSelected: isSelected,
                           onTap: () {
                             setState(() => _selectedIndex = index);
@@ -260,6 +377,23 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
     );
   }
 
+  void _showRenameDialog(Workspace workspace) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.transparent,
+      builder: (context) => TextInputDialog(
+        title: 'Rename Workspace',
+        label: 'Workspace Name',
+        okButtonLabel: 'Rename',
+        initialValue: workspace.name,
+      ),
+    ).then((newName) {
+      if (newName != null && newName.toString().isNotEmpty) {
+        _renameWorkspace(workspace, newName.toString());
+      }
+    });
+  }
+
   Widget _buildListItem({
     required String label,
     String? shortcut,
@@ -270,7 +404,7 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
       onTap: onTap,
       child: Container(
         color: isSelected
-            ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
+            ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
             : null,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         alignment: Alignment.centerLeft,
@@ -295,6 +429,89 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWorkspaceItem({
+    required Workspace workspace,
+    required bool isSelected,
+    required WorkspaceAction focusedAction,
+    required VoidCallback onTap,
+    required VoidCallback onEdit,
+    required VoidCallback onDelete,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        color: isSelected
+            ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
+            : null,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Icon(Icons.work, size: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                workspace.name,
+                style: TextStyle(
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  fontSize: 16,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildActionButton(
+                  icon: Icons.edit,
+                  tooltip: 'Rename',
+                  isFocused: focusedAction == WorkspaceAction.edit,
+                  onTap: onEdit,
+                ),
+                const SizedBox(width: 8),
+                _buildActionButton(
+                  icon: Icons.delete,
+                  tooltip: 'Delete',
+                  isFocused: focusedAction == WorkspaceAction.delete,
+                  onTap: onDelete,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String tooltip,
+    required bool isFocused,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: isFocused
+          ? Theme.of(context).colorScheme.primary
+          : Colors.transparent,
+      borderRadius: BorderRadius.circular(4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Icon(
+            icon,
+            size: 20,
+            color: isFocused
+                ? Theme.of(context).colorScheme.onPrimary
+                : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       ),
     );

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:fima/domain/entity/workspace.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
@@ -153,8 +154,6 @@ class KeyboardHandler extends ConsumerWidget {
           return KeyEventResult.handled;
         }
 
-
-
         // F7 - Create Directory
         if (event.logicalKey == LogicalKeyboardKey.f7) {
           final panelState = ref.read(panelStateProvider(activePanelId));
@@ -179,7 +178,7 @@ class KeyboardHandler extends ConsumerWidget {
 
         // F8 - Create File
         if (event.logicalKey == LogicalKeyboardKey.f8) {
-           final panelState = ref.read(panelStateProvider(activePanelId));
+          final panelState = ref.read(panelStateProvider(activePanelId));
           if (panelState.currentPath.isEmpty) return KeyEventResult.ignored;
 
           showDialog(
@@ -202,18 +201,47 @@ class KeyboardHandler extends ConsumerWidget {
         if (event.logicalKey == LogicalKeyboardKey.f9) {
           final path = ref.read(panelStateProvider(activePanelId)).currentPath;
           if (path.isNotEmpty) {
-             _openTerminal(path);
+            _openTerminal(path);
           }
           return KeyEventResult.handled;
         }
 
         // F10 - Open Default File Manager
         if (event.logicalKey == LogicalKeyboardKey.f10) {
-           final path = ref.read(panelStateProvider(activePanelId)).currentPath;
-           if (path.isNotEmpty) {
-              _openFileManager(path);
-           }
-           return KeyEventResult.handled;
+          final path = ref.read(panelStateProvider(activePanelId)).currentPath;
+          if (path.isNotEmpty) {
+            _openFileManager(path);
+          }
+          return KeyEventResult.handled;
+        }
+
+        // Ctrl+Shift+S - Save as Workspace
+        if (event.logicalKey == LogicalKeyboardKey.keyS &&
+            (HardwareKeyboard.instance.isControlPressed ||
+                HardwareKeyboard.instance.isMetaPressed) &&
+            HardwareKeyboard.instance.isShiftPressed) {
+          final leftState = ref.read(panelStateProvider('left'));
+          final rightState = ref.read(panelStateProvider('right'));
+
+          showDialog(
+            context: context,
+            barrierColor: Colors.transparent,
+            builder: (context) => const TextInputDialog(
+              title: 'Save Workspace',
+              label: 'Workspace Name',
+              okButtonLabel: 'Save',
+            ),
+          ).then((name) {
+            if (name != null && name.toString().isNotEmpty) {
+              final workspace = Workspace(
+                name: name.toString(),
+                leftPanelPath: leftState.currentPath,
+                rightPanelPath: rightState.currentPath,
+              );
+              ref.read(userSettingsProvider.notifier).addWorkspace(workspace);
+            }
+          });
+          return KeyEventResult.handled;
         }
 
         // Omni Dialog (Ctrl + P or Ctrl + Shift + P)
@@ -221,15 +249,26 @@ class KeyboardHandler extends ConsumerWidget {
             (HardwareKeyboard.instance.isControlPressed ||
                 HardwareKeyboard.instance.isMetaPressed)) {
           final isShift = HardwareKeyboard.instance.isShiftPressed;
-          
+
           showDialog(
             context: context,
-            barrierColor: Colors.transparent, // Remove barrier color
-            builder: (context) => OmniDialog(
-              initialText: isShift ? '>' : '',
-            ),
+            barrierColor: Colors.transparent,
+            builder: (context) => OmniDialog(initialText: isShift ? '>' : ''),
           );
-          
+
+          return KeyEventResult.handled;
+        }
+
+        // Workspace Dialog (Ctrl + W)
+        if (event.logicalKey == LogicalKeyboardKey.keyW &&
+            (HardwareKeyboard.instance.isControlPressed ||
+                HardwareKeyboard.instance.isMetaPressed)) {
+          showDialog(
+            context: context,
+            barrierColor: Colors.transparent,
+            builder: (context) => const OmniDialog(initialText: 'w '),
+          );
+
           return KeyEventResult.handled;
         }
 
@@ -248,55 +287,68 @@ class KeyboardHandler extends ConsumerWidget {
         await Process.run('x-terminal-emulator', [], workingDirectory: path);
       } catch (e) {
         // Fallbacks
-        final terminals = ['gnome-terminal', 'konsole', 'xfce4-terminal', 'mate-terminal', 'terminator', 'xterm'];
+        final terminals = [
+          'gnome-terminal',
+          'konsole',
+          'xfce4-terminal',
+          'mate-terminal',
+          'terminator',
+          'xterm',
+        ];
         for (final terminal in terminals) {
           try {
-             // Most terminals accept working directory as is or need --working-directory
-             // But Process.run workingDirectory argument usually handles it if the terminal respects cwd
-             await Process.run(terminal, [], workingDirectory: path);
-             return; // Success
+            // Most terminals accept working directory as is or need --working-directory
+            // But Process.run workingDirectory argument usually handles it if the terminal respects cwd
+            await Process.run(terminal, [], workingDirectory: path);
+            return; // Success
           } catch (_) {
-             // Continue to next
+            // Continue to next
           }
         }
         debugPrint('Could not find a supported terminal to open.');
       }
     } else if (Platform.isMacOS) {
-        // Mac implementation
-        try {
-            await Process.run('open', ['-a', 'Terminal', path]);
-        } catch (e) {
-            debugPrint('Error opening Mac terminal: $e');
-        }
+      // Mac implementation
+      try {
+        await Process.run('open', ['-a', 'Terminal', path]);
+      } catch (e) {
+        debugPrint('Error opening Mac terminal: $e');
+      }
     } else if (Platform.isWindows) {
-        // Windows implementation
-        try {
-            await Process.run('cmd', ['/K', 'start', 'cd', '/d', path], runInShell: true);
-        } catch (e) {
-             debugPrint('Error opening Windows terminal: $e');
-        }
+      // Windows implementation
+      try {
+        await Process.run('cmd', [
+          '/K',
+          'start',
+          'cd',
+          '/d',
+          path,
+        ], runInShell: true);
+      } catch (e) {
+        debugPrint('Error opening Windows terminal: $e');
+      }
     }
   }
 
   Future<void> _openFileManager(String path) async {
-      if (Platform.isLinux) {
-          try {
-              await Process.run('xdg-open', [path]);
-          } catch (e) {
-              debugPrint('Error opening file manager: $e');
-          }
-      } else if (Platform.isMacOS) {
-          try {
-              await Process.run('open', [path]);
-          } catch (e) {
-              debugPrint('Error opening file manager: $e');
-          }
-      } else if (Platform.isWindows) {
-           try {
-              await Process.run('explorer', [path]);
-          } catch (e) {
-              debugPrint('Error opening file manager: $e');
-          }
+    if (Platform.isLinux) {
+      try {
+        await Process.run('xdg-open', [path]);
+      } catch (e) {
+        debugPrint('Error opening file manager: $e');
       }
+    } else if (Platform.isMacOS) {
+      try {
+        await Process.run('open', [path]);
+      } catch (e) {
+        debugPrint('Error opening file manager: $e');
+      }
+    } else if (Platform.isWindows) {
+      try {
+        await Process.run('explorer', [path]);
+      } catch (e) {
+        debugPrint('Error opening file manager: $e');
+      }
+    }
   }
 }
