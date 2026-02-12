@@ -81,13 +81,16 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   @override
   void didUpdateWidget(FilePanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Reload if initialPath changes
+    // Reload if initialPath changes and we're not already at this path
     if (oldWidget.initialPath != widget.initialPath &&
         widget.initialPath != null &&
         widget.initialPath!.isNotEmpty) {
-      ref
-          .read(panelStateProvider(widget.panelId).notifier)
-          .loadPath(widget.initialPath!);
+      final currentState = ref.read(panelStateProvider(widget.panelId));
+      if (currentState.currentPath != widget.initialPath) {
+        ref
+            .read(panelStateProvider(widget.panelId).notifier)
+            .loadPath(widget.initialPath!, addToVisited: false);
+      }
     }
   }
 
@@ -313,9 +316,12 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                     onDoubleTap: () {
                       // Double click: Navigate or open
                       if (item.isDirectory || item.isParentDetails) {
-                        controller.loadPath(item.path);
+                        if (item.isParentDetails) {
+                          controller.navigateToParent();
+                        } else {
+                          controller.loadPath(item.path, addToVisited: true);
+                        }
                       } else {
-                        // Open file with default program
                         OpenFile.open(item.path);
                       }
                     },

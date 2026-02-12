@@ -1,10 +1,6 @@
 import 'package:fima/domain/entity/file_system_item.dart';
 
-enum SortColumn {
-  name,
-  size,
-  modified,
-}
+enum SortColumn { name, size, modified }
 
 class PanelState {
   final String currentPath;
@@ -12,8 +8,9 @@ class PanelState {
   final SortColumn sortColumn;
   final bool sortAscending;
   final Set<String> selectedItems;
-  final int focusedIndex; // Index of focused item for keyboard navigation
-  final String? editingPath; // Path of the item currently being edited
+  final int focusedIndex;
+  final String? editingPath;
+  final List<String> visitedPaths;
 
   const PanelState({
     this.currentPath = '',
@@ -21,8 +18,9 @@ class PanelState {
     this.sortColumn = SortColumn.name,
     this.sortAscending = true,
     this.selectedItems = const {},
-    this.focusedIndex = -1, // -1 means no focus
+    this.focusedIndex = -1,
     this.editingPath,
+    this.visitedPaths = const [],
   });
 
   PanelState copyWith({
@@ -33,6 +31,7 @@ class PanelState {
     Set<String>? selectedItems,
     int? focusedIndex,
     String? editingPath,
+    List<String>? visitedPaths,
   }) {
     return PanelState(
       currentPath: currentPath ?? this.currentPath,
@@ -41,16 +40,13 @@ class PanelState {
       sortAscending: sortAscending ?? this.sortAscending,
       selectedItems: selectedItems ?? this.selectedItems,
       focusedIndex: focusedIndex ?? this.focusedIndex,
-      // If editingPath is passed as null explicitly (to clear it), we might need a different approach
-      // or just assume if it's passed it overrides.
-      // Standard copyWith pattern:
       editingPath: editingPath ?? this.editingPath,
+      visitedPaths: visitedPaths ?? this.visitedPaths,
     );
   }
 
-  // Helper to clear editing path
   PanelState clearEditing() {
-      return PanelState(
+    return PanelState(
       currentPath: currentPath,
       items: items,
       sortColumn: sortColumn,
@@ -58,6 +54,7 @@ class PanelState {
       selectedItems: selectedItems,
       focusedIndex: focusedIndex,
       editingPath: null,
+      visitedPaths: visitedPaths,
     );
   }
 }

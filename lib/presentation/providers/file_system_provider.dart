@@ -35,36 +35,85 @@ class PanelController extends StateNotifier<PanelState> {
 
   Future<void> init(String? initialPath) async {
     final path = initialPath ?? await _repository.getHomeDirectory();
-    await loadPath(path);
+    await loadPath(path, addToVisited: false);
   }
 
-  Future<void> loadPath(String path) async {
+  Future<void> loadPath(
+    String path, {
+    bool addToVisited = true,
+    String? selectItemPath,
+    bool preserveFocusedIndex = false,
+  }) async {
     try {
       final settings = _ref.read(userSettingsProvider);
       final items = await _repository.getItems(
         path,
         showHiddenFiles: settings.showHiddenFiles,
       );
-      state = state.copyWith(
-        currentPath: path,
-        items: _sortItems(items, state.sortColumn, state.sortAscending),
-        selectedItems: {}, // Clear selection on navigation
+
+      final sortedItems = _sortItems(
+        items,
+        state.sortColumn,
+        state.sortAscending,
       );
 
-      // Save path to settings
+      int newFocusedIndex = _getFocusedIndex(
+        sortedItems,
+        selectItemPath,
+        preserveFocusedIndex,
+      );
+      if (preserveFocusedIndex && state.focusedIndex < sortedItems.length) {
+        newFocusedIndex = state.focusedIndex;
+      }
+
+      List<String> newVisitedPaths = List<String>.from(state.visitedPaths);
+      if (addToVisited && path.isNotEmpty) {
+        newVisitedPaths.add(path);
+      }
+
+      state = state.copyWith(
+        currentPath: path,
+        items: sortedItems,
+        selectedItems: {},
+        focusedIndex: newFocusedIndex,
+        visitedPaths: newVisitedPaths,
+      );
+
       _savePath(path);
-      
-      // Index path
+
       _ref.read(userSettingsProvider.notifier).indexPath(path);
     } catch (e) {
-      // Handle error (e.g., access denied, path does not exist)
       debugPrint('Error loading path $path: $e');
     }
   }
 
+  int _getFocusedIndex(
+    List<FileSystemItem> sortedItems,
+    String? selectItemPath,
+    bool preserveFocusedIndex,
+  ) {
+    if (selectItemPath == null &&
+        !preserveFocusedIndex &&
+        state.visitedPaths.isNotEmpty) {
+      selectItemPath = state.visitedPaths.last;
+    }
+    if (selectItemPath != null) {
+      final index = sortedItems.indexWhere(
+        (item) => item.path == selectItemPath,
+      );
+      return index >= 0 ? index : 0;
+    }
+    return 0;
+  }
+
   Future<void> refresh() async {
     if (state.currentPath.isNotEmpty) {
-      await loadPath(state.currentPath);
+      await loadPath(
+        state.currentPath,
+        addToVisited: false,
+        selectItemPath: null,
+        preserveFocusedIndex: true,
+      );
     }
   }
 
@@ -84,7 +133,25 @@ class PanelController extends StateNotifier<PanelState> {
     if (state.currentPath.isEmpty) return;
     final parent = p.dirname(state.currentPath);
     if (parent != state.currentPath) {
-      await loadPath(parent);
+      String? selectPath;
+      if (state.visitedPaths.isNotEmpty) {
+        selectPath = state.visitedPaths.removeLast();
+      }
+      await loadPath(parent, addToVisited: false, selectItemPath: selectPath);
+    }
+  }
+
+  void enterFocusedItem() {
+    if (state.items.isEmpty || state.focusedIndex >= state.items.length) return;
+    final item = state.items[state.focusedIndex];
+    if (item.isDirectory || item.isParentDetails) {
+      if (item.isParentDetails) {
+        navigateToParent();
+      } else {
+        loadPath(item.path, addToVisited: true);
+      }
+    } else {
+      OpenFile.open(item.path);
     }
   }
 
@@ -184,17 +251,6 @@ class PanelController extends StateNotifier<PanelState> {
     // Focus only, no selection update
   }
 
-  void enterFocusedItem() {
-    if (state.items.isEmpty || state.focusedIndex >= state.items.length) return;
-    final item = state.items[state.focusedIndex];
-    if (item.isDirectory || item.isParentDetails) {
-      loadPath(item.path);
-    } else {
-      // Open file with default program
-      OpenFile.open(item.path);
-    }
-  }
-
   void toggleSelectionAtFocus() {
     if (state.focusedIndex < 0 || state.focusedIndex >= state.items.length) {
       return;
@@ -220,6 +276,7 @@ class PanelController extends StateNotifier<PanelState> {
       state = state.copyWith(focusedIndex: index);
     }
   }
+
   Future<void> createDirectory(String name) async {
     try {
       final newPath = p.join(state.currentPath, name);
@@ -262,17 +319,15 @@ class PanelController extends StateNotifier<PanelState> {
       final parent = p.dirname(editingPath);
       final newPath = p.join(parent, newName);
       if (newPath != editingPath) {
-         await _repository.renameItem(editingPath, newPath);
-         await loadPath(state.currentPath);
+        await _repository.renameItem(editingPath, newPath);
+        await loadPath(state.currentPath);
       }
     } catch (e) {
       debugPrint('Error renaming item: $e');
     } finally {
-       state = state.clearEditing();
+      state = state.clearEditing();
     }
   }
-
-
 
   Future<void> deleteSelectedItems({required bool permanent}) async {
     final selectedPaths = state.selectedItems.toList();
@@ -313,35 +368,48 @@ class PanelController extends StateNotifier<PanelState> {
         await Process.run('x-terminal-emulator', [], workingDirectory: path);
       } catch (e) {
         // Fallbacks
-        final terminals = ['gnome-terminal', 'konsole', 'xfce4-terminal', 'mate-terminal', 'terminator', 'xterm'];
+        final terminals = [
+          'gnome-terminal',
+          'konsole',
+          'xfce4-terminal',
+          'mate-terminal',
+          'terminator',
+          'xterm',
+        ];
         for (final terminal in terminals) {
           try {
-             // Most terminals accept working directory as is or need --working-directory
-             // But Process.run workingDirectory argument usually handles it if the terminal respects cwd
-             // For gnome-terminal we might need more arguments?
-             // Process.run usually works.
-             await Process.run(terminal, [], workingDirectory: path);
-             return; // Success
+            // Most terminals accept working directory as is or need --working-directory
+            // But Process.run workingDirectory argument usually handles it if the terminal respects cwd
+            // For gnome-terminal we might need more arguments?
+            // Process.run usually works.
+            await Process.run(terminal, [], workingDirectory: path);
+            return; // Success
           } catch (_) {
-             // Continue to next
+            // Continue to next
           }
         }
         debugPrint('Could not find a supported terminal to open.');
       }
     } else if (Platform.isMacOS) {
-        // Mac implementation
-        try {
-            await Process.run('open', ['-a', 'Terminal', path]);
-        } catch (e) {
-            debugPrint('Error opening Mac terminal: $e');
-        }
+      // Mac implementation
+      try {
+        await Process.run('open', ['-a', 'Terminal', path]);
+      } catch (e) {
+        debugPrint('Error opening Mac terminal: $e');
+      }
     } else if (Platform.isWindows) {
-        // Windows implementation
-        try {
-            await Process.run('cmd', ['/K', 'start', 'cd', '/d', path], runInShell: true);
-        } catch (e) {
-             debugPrint('Error opening Windows terminal: $e');
-        }
+      // Windows implementation
+      try {
+        await Process.run('cmd', [
+          '/K',
+          'start',
+          'cd',
+          '/d',
+          path,
+        ], runInShell: true);
+      } catch (e) {
+        debugPrint('Error opening Windows terminal: $e');
+      }
     }
   }
 
