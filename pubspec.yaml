@@ -43,6 +43,7 @@ dependencies:
   state_notifier: ^1.0.0
   open_file: ^3.5.9
   window_manager: ^0.3.8
+  pasteboard: ^0.4.0
 
 
 dev_dependencies:

@@ -1,9 +1,12 @@
 import 'dart:io';
 
+import 'package:fima/domain/entity/file_operation.dart';
 import 'package:fima/domain/entity/workspace.dart';
 import 'package:fima/infrastructure/service/linux_application_service.dart';
+import 'package:fima/infrastructure/service/system_clipboard_service.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
+import 'package:fima/presentation/providers/internal_clipboard_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart';
@@ -88,6 +91,31 @@ class KeyboardHandler extends ConsumerWidget {
             (HardwareKeyboard.instance.isControlPressed ||
                 HardwareKeyboard.instance.isMetaPressed)) {
           panelController.deselectAll();
+          return KeyEventResult.handled;
+        }
+
+        // Ctrl+C - Copy to system clipboard
+        if (event.logicalKey == LogicalKeyboardKey.keyC &&
+            (HardwareKeyboard.instance.isControlPressed ||
+                HardwareKeyboard.instance.isMetaPressed) &&
+            !HardwareKeyboard.instance.isShiftPressed) {
+          _copyToClipboard(ref, activePanelId, ClipboardOperation.copy);
+          return KeyEventResult.handled;
+        }
+
+        // Ctrl+X - Cut to system clipboard
+        if (event.logicalKey == LogicalKeyboardKey.keyX &&
+            (HardwareKeyboard.instance.isControlPressed ||
+                HardwareKeyboard.instance.isMetaPressed)) {
+          _copyToClipboard(ref, activePanelId, ClipboardOperation.cut);
+          return KeyEventResult.handled;
+        }
+
+        // Ctrl+V - Paste from system clipboard
+        if (event.logicalKey == LogicalKeyboardKey.keyV &&
+            (HardwareKeyboard.instance.isControlPressed ||
+                HardwareKeyboard.instance.isMetaPressed)) {
+          _pasteFromClipboard(ref, activePanelId);
           return KeyEventResult.handled;
         }
 
@@ -385,5 +413,202 @@ class KeyboardHandler extends ConsumerWidget {
             .openWithApplication(selectedApp, targetPath!);
       }
     });
+  }
+
+  Future<void> _copyToClipboard(
+    WidgetRef ref,
+    String activePanelId,
+    ClipboardOperation operation,
+  ) async {
+    final panelState = ref.read(panelStateProvider(activePanelId));
+    List<String> paths = panelState.selectedItems.toList();
+
+    if (paths.isEmpty) {
+      if (panelState.focusedIndex >= 0 &&
+          panelState.focusedIndex < panelState.items.length) {
+        final item = panelState.items[panelState.focusedIndex];
+        if (!item.isParentDetails) {
+          paths.add(item.path);
+        }
+      }
+    }
+
+    if (paths.isNotEmpty) {
+      await SystemClipboard.setFilePaths(paths, operation);
+
+      if (operation == ClipboardOperation.cut) {
+        ref
+            .read(internalClipboardProvider.notifier)
+            .setCutPaths(paths, panelState.currentPath);
+      } else {
+        ref.read(internalClipboardProvider.notifier).clearCutPaths();
+      }
+    }
+  }
+
+  Future<void> _pasteFromClipboard(WidgetRef ref, String activePanelId) async {
+    final clipboardData = await SystemClipboard.getFilePaths();
+    final destPath = ref.read(panelStateProvider(activePanelId)).currentPath;
+
+    if (destPath.isEmpty) return;
+
+    final internalClipboard = ref.read(internalClipboardProvider);
+    final repository = ref.read(fileSystemRepositoryProvider);
+
+    // Check if we have internal cut paths that match the clipboard
+    bool isInternalCut = false;
+    List<String> paths;
+
+    if (clipboardData != null) {
+      paths = clipboardData.$1;
+
+      // Check if clipboard matches our internal cut state
+      if (internalClipboard.cutPaths.isNotEmpty &&
+          paths.length == internalClipboard.cutPaths.length &&
+          internalClipboard.cutSourcePath != null &&
+          paths.every((p) => internalClipboard.cutPaths.contains(p))) {
+        isInternalCut = true;
+      }
+    } else if (internalClipboard.cutPaths.isNotEmpty) {
+      // No clipboard data but we have internal cut - use that
+      paths = internalClipboard.cutPaths;
+      isInternalCut = true;
+    } else {
+      return;
+    }
+
+    if (paths.isEmpty) return;
+
+    // Determine source path for comparison
+    String? sourcePath;
+    if (isInternalCut && internalClipboard.cutSourcePath != null) {
+      sourcePath = internalClipboard.cutSourcePath;
+    } else if (paths.isNotEmpty) {
+      // Get source directory from first path
+      final firstPath = paths.first;
+      final lastSlash = firstPath.lastIndexOf('/');
+      if (lastSlash > 0) {
+        sourcePath = firstPath.substring(0, lastSlash);
+      }
+    }
+
+    // Check if pasting to same location - need to handle specially
+    bool isSameLocation = sourcePath != null && sourcePath == destPath;
+
+    if (isInternalCut) {
+      // Move operation (cut + paste)
+      List<String> finalPaths = paths;
+
+      // If moving to same location, no need to rename, just refresh
+      if (!isSameLocation) {
+        final stream = repository.moveItems(
+          finalPaths,
+          destPath,
+          CancellationToken(),
+        );
+        await for (final _ in stream) {
+          // Wait for completion
+        }
+      }
+
+      // Clear clipboard and internal state
+      ref.read(internalClipboardProvider.notifier).clearCutPaths();
+
+      // Refresh both panels
+      final sourcePanelId = ref
+          .read(focusProvider.notifier)
+          .getInactivePanelId();
+
+      ref
+          .read(panelStateProvider(sourcePanelId).notifier)
+          .loadPath(sourcePath!);
+      ref.read(panelStateProvider(activePanelId).notifier).loadPath(destPath);
+      return;
+    } else {
+      // Copy operation
+      if (isSameLocation) {
+        // Generate new names and copy with new names
+        final newPaths = _generateCopyNames(paths, destPath);
+
+        for (int i = 0; i < paths.length; i++) {
+          final sourceFile = paths[i];
+          final destFile = newPaths[i];
+          await repository.copyItem(sourceFile, destFile);
+        }
+
+        // Select the first copied file
+        final copiedFileName = newPaths.isNotEmpty
+            ? newPaths.first.split('/').last
+            : null;
+        final destSelectPath = copiedFileName != null
+            ? '$destPath/$copiedFileName'
+            : null;
+        ref
+            .read(panelStateProvider(activePanelId).notifier)
+            .loadPath(destPath, selectItemPath: destSelectPath);
+      } else {
+        final stream = repository.copyItems(
+          paths,
+          destPath,
+          CancellationToken(),
+        );
+        await for (final _ in stream) {
+          // Wait for completion
+        }
+
+        // Select the first copied file in destination
+        final copiedFileName = paths.isNotEmpty
+            ? paths.first.split('/').last
+            : null;
+        final destSelectPath = copiedFileName != null
+            ? '$destPath/$copiedFileName'
+            : null;
+        ref
+            .read(panelStateProvider(activePanelId).notifier)
+            .loadPath(destPath, selectItemPath: destSelectPath);
+      }
+      return;
+    }
+  }
+
+  List<String> _generateCopyNames(List<String> paths, String destPath) {
+    final result = <String>[];
+
+    for (final originalPath in paths) {
+      final fileName = originalPath.split('/').last;
+      final dotIndex = fileName.lastIndexOf('.');
+
+      String baseName;
+      String extension;
+
+      if (dotIndex > 0) {
+        baseName = fileName.substring(0, dotIndex);
+        extension = fileName.substring(dotIndex);
+      } else {
+        baseName = fileName;
+        extension = '';
+      }
+
+      String newName = '$baseName (copy)$extension';
+      String newPath = '$destPath/$newName';
+
+      // Check if file already exists and increment if needed
+      int counter = 1;
+      while (_fileExists(newPath)) {
+        newName = '$baseName ($counter copy)$extension';
+        newPath = '$destPath/$newName';
+        counter++;
+      }
+
+      result.add(newPath);
+    }
+
+    return result;
+  }
+
+  bool _fileExists(String path) {
+    final file = File(path);
+    final dir = Directory(path);
+    return file.existsSync() || dir.existsSync();
   }
 }

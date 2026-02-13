@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   open_file_linux
+  pasteboard
   screen_retriever
   window_manager
 )
