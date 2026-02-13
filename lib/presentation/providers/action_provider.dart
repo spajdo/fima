@@ -1,9 +1,11 @@
 import 'package:fima/domain/entity/app_action.dart';
 import 'package:fima/domain/entity/workspace.dart';
+import 'package:fima/infrastructure/service/linux_application_service.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
+import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart';
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
 import 'package:flutter/material.dart';
@@ -193,6 +195,38 @@ class ActionGenerator {
           if (panelState.currentPath.isNotEmpty) {
             panelController.openFileManager(panelState.currentPath);
           }
+        },
+      ),
+      AppAction(
+        id: 'open_with',
+        label: 'Open with...',
+        shortcut: 'F4',
+        callback: () {
+          final panelState = ref.read(panelStateProvider(activePanelId));
+          String? targetPath;
+
+          if (panelState.selectedItems.isNotEmpty) {
+            targetPath = panelState.selectedItems.first;
+          } else if (panelState.focusedIndex >= 0 &&
+              panelState.focusedIndex < panelState.items.length &&
+              !panelState.items[panelState.focusedIndex].isParentDetails) {
+            targetPath = panelState.items[panelState.focusedIndex].path;
+          }
+
+          if (targetPath == null || targetPath.isEmpty) return;
+
+          final appService = LinuxApplicationService();
+          final applications = appService.getInstalledApplications();
+
+          if (!context.mounted) return;
+
+          ApplicationPickerDialog.show(context, applications).then((
+            selectedApp,
+          ) {
+            if (selectedApp != null) {
+              panelController.openWithApplication(selectedApp, targetPath!);
+            }
+          });
         },
       ),
       AppAction(

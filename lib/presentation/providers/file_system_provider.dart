@@ -9,6 +9,8 @@ import 'package:open_file/open_file.dart';
 import 'package:path/path.dart' as p;
 import 'dart:io';
 
+import 'package:fima/domain/entity/desktop_application.dart';
+
 final fileSystemRepositoryProvider = Provider<FileSystemRepository>((ref) {
   return LocalFileSystemRepository();
 });
@@ -433,5 +435,49 @@ class PanelController extends StateNotifier<PanelState> {
         debugPrint('Error opening file manager on Windows: $e');
       }
     }
+  }
+
+  Future<void> openWithApplication(DesktopApplication app, String path) async {
+    if (Platform.isLinux) {
+      try {
+        final command = _buildCommand(app.exec, path);
+        await Process.start(command[0], command.sublist(1), runInShell: true);
+      } catch (e) {
+        debugPrint('Error opening with application on Linux: $e');
+      }
+    } else if (Platform.isMacOS) {
+      try {
+        await Process.run('open', ['-a', app.exec, path]);
+      } catch (e) {
+        debugPrint('Error opening with application on macOS: $e');
+      }
+    } else if (Platform.isWindows) {
+      try {
+        final command = _buildCommand(app.exec, path);
+        await Process.start(command[0], command.sublist(1), runInShell: true);
+      } catch (e) {
+        debugPrint('Error opening with application on Windows: $e');
+      }
+    }
+  }
+
+  List<String> _buildCommand(String exec, String path) {
+    final parts = exec.split(' ');
+    final result = <String>[];
+    for (final part in parts) {
+      if (part.isEmpty) continue;
+      final replaced = _replaceExecParams(part, path);
+      result.add(replaced);
+    }
+    return result;
+  }
+
+  String _replaceExecParams(String exec, String path) {
+    String result = exec;
+    final params = ['%F', '%f', '%U', '%u', '%D', '%d', '%N', '%n'];
+    for (final param in params) {
+      result = result.replaceAll(param, path);
+    }
+    return result;
   }
 }

@@ -1,10 +1,12 @@
 import 'dart:io';
 
 import 'package:fima/domain/entity/workspace.dart';
+import 'package:fima/infrastructure/service/linux_application_service.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
+import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart';
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
 import 'package:fima/presentation/widgets/popups/omni_dialog.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
@@ -206,6 +208,12 @@ class KeyboardHandler extends ConsumerWidget {
           return KeyEventResult.handled;
         }
 
+        // F4 - Open with...
+        if (event.logicalKey == LogicalKeyboardKey.f4) {
+          _openWithApplication(context, ref);
+          return KeyEventResult.handled;
+        }
+
         // F10 - Open Default File Manager
         if (event.logicalKey == LogicalKeyboardKey.f10) {
           final path = ref.read(panelStateProvider(activePanelId)).currentPath;
@@ -350,5 +358,32 @@ class KeyboardHandler extends ConsumerWidget {
         debugPrint('Error opening file manager: $e');
       }
     }
+  }
+
+  void _openWithApplication(BuildContext context, WidgetRef ref) {
+    final activePanelId = ref.read(focusProvider.notifier).getActivePanelId();
+    final panelState = ref.read(panelStateProvider(activePanelId));
+    String? targetPath;
+
+    if (panelState.selectedItems.isNotEmpty) {
+      targetPath = panelState.selectedItems.first;
+    } else if (panelState.focusedIndex >= 0 &&
+        panelState.focusedIndex < panelState.items.length &&
+        !panelState.items[panelState.focusedIndex].isParentDetails) {
+      targetPath = panelState.items[panelState.focusedIndex].path;
+    }
+
+    if (targetPath == null || targetPath.isEmpty) return;
+
+    final appService = LinuxApplicationService();
+    final applications = appService.getInstalledApplications();
+
+    ApplicationPickerDialog.show(context, applications).then((selectedApp) {
+      if (selectedApp != null) {
+        ref
+            .read(panelStateProvider(activePanelId).notifier)
+            .openWithApplication(selectedApp, targetPath!);
+      }
+    });
   }
 }
