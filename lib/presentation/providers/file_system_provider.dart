@@ -283,8 +283,7 @@ class PanelController extends StateNotifier<PanelState> {
     try {
       final newPath = p.join(state.currentPath, name);
       await _repository.createDirectory(newPath);
-      await loadPath(state.currentPath);
-      // Optional: Select the new directory?
+      await loadPath(state.currentPath, selectItemPath: newPath);
     } catch (e) {
       debugPrint('Error creating directory: $e');
     }
@@ -294,7 +293,7 @@ class PanelController extends StateNotifier<PanelState> {
     try {
       final newPath = p.join(state.currentPath, name);
       await _repository.createFile(newPath);
-      await loadPath(state.currentPath);
+      await loadPath(state.currentPath, selectItemPath: newPath);
     } catch (e) {
       debugPrint('Error creating file: $e');
     }
@@ -333,6 +332,8 @@ class PanelController extends StateNotifier<PanelState> {
 
   Future<void> deleteSelectedItems({required bool permanent}) async {
     final selectedPaths = state.selectedItems.toList();
+    int targetIndex = -1;
+
     if (selectedPaths.isEmpty &&
         state.focusedIndex >= 0 &&
         state.focusedIndex < state.items.length) {
@@ -340,11 +341,36 @@ class PanelController extends StateNotifier<PanelState> {
       final item = state.items[state.focusedIndex];
       if (!item.isParentDetails) {
         selectedPaths.add(item.path);
+        targetIndex = state.focusedIndex;
+      }
+    } else if (selectedPaths.isNotEmpty) {
+      // Find the highest index among selected items
+      for (final path in selectedPaths) {
+        final idx = state.items.indexWhere((item) => item.path == path);
+        if (idx > targetIndex) targetIndex = idx;
       }
     }
 
     if (selectedPaths.isEmpty) return;
 
+    // Build list of items that will remain after deletion
+    final remainingItems = state.items
+        .where((item) => !selectedPaths.contains(item.path))
+        .toList();
+
+    // Determine which item to select after deletion
+    String? selectPath;
+    if (remainingItems.isNotEmpty) {
+      // If targetIndex is beyond remaining items, select last one
+      final newTargetIndex = targetIndex >= remainingItems.length
+          ? remainingItems.length - 1
+          : targetIndex;
+      if (newTargetIndex >= 0 && newTargetIndex < remainingItems.length) {
+        selectPath = remainingItems[newTargetIndex].path;
+      }
+    }
+
+    // Perform deletion
     for (final path in selectedPaths) {
       try {
         if (permanent) {
@@ -357,8 +383,7 @@ class PanelController extends StateNotifier<PanelState> {
       }
     }
 
-    // Refresh and clear selection
-    await loadPath(state.currentPath);
+    await loadPath(state.currentPath, selectItemPath: selectPath);
   }
 
   Future<void> openTerminal(String path) async {
