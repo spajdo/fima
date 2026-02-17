@@ -214,7 +214,11 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       _previousShowHiddenFiles = settings.showHiddenFiles;
       final currentPath = panelState.currentPath;
       if (currentPath.isNotEmpty) {
-        controller.loadPath(currentPath);
+        controller.loadPath(
+          currentPath,
+          preserveSelection: true,
+          preserveFocusedIndex: true,
+        );
       }
     }
 

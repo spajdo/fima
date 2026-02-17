@@ -45,6 +45,7 @@ class PanelController extends StateNotifier<PanelState> {
     bool addToVisited = true,
     String? selectItemPath,
     bool preserveFocusedIndex = false,
+    bool preserveSelection = false,
   }) async {
     try {
       final settings = _ref.read(userSettingsProvider);
@@ -59,13 +60,19 @@ class PanelController extends StateNotifier<PanelState> {
         state.sortAscending,
       );
 
-      int newFocusedIndex = _getFocusedIndex(
-        sortedItems,
-        selectItemPath,
-        preserveFocusedIndex,
-      );
-      if (preserveFocusedIndex && state.focusedIndex < sortedItems.length) {
-        newFocusedIndex = state.focusedIndex;
+      // Calculate new focused index
+      int newFocusedIndex;
+      if (preserveFocusedIndex &&
+          state.focusedIndex >= 0 &&
+          state.focusedIndex < state.items.length) {
+        // Find focused item by path, not by index
+        final focusedPath = state.items[state.focusedIndex].path;
+        newFocusedIndex = sortedItems.indexWhere(
+          (item) => item.path == focusedPath,
+        );
+        if (newFocusedIndex < 0) newFocusedIndex = 0;
+      } else {
+        newFocusedIndex = _getFocusedIndex(sortedItems, selectItemPath);
       }
 
       List<String> newVisitedPaths = List<String>.from(state.visitedPaths);
@@ -73,10 +80,17 @@ class PanelController extends StateNotifier<PanelState> {
         newVisitedPaths.add(path);
       }
 
+      // Preserve selection by filtering selected paths that still exist
+      Set<String> selectedItemsToUse = preserveSelection
+          ? state.selectedItems
+                .where((p) => sortedItems.any((item) => item.path == p))
+                .toSet()
+          : <String>{};
+
       state = state.copyWith(
         currentPath: path,
         items: sortedItems,
-        selectedItems: {},
+        selectedItems: preserveSelection ? selectedItemsToUse : {},
         focusedIndex: newFocusedIndex,
         visitedPaths: newVisitedPaths,
       );
@@ -92,13 +106,7 @@ class PanelController extends StateNotifier<PanelState> {
   int _getFocusedIndex(
     List<FileSystemItem> sortedItems,
     String? selectItemPath,
-    bool preserveFocusedIndex,
   ) {
-    if (selectItemPath == null &&
-        !preserveFocusedIndex &&
-        state.visitedPaths.isNotEmpty) {
-      selectItemPath = state.visitedPaths.last;
-    }
     if (selectItemPath != null) {
       final index = sortedItems.indexWhere(
         (item) => item.path == selectItemPath,
