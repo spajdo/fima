@@ -1,4 +1,5 @@
 import 'package:fima/presentation/providers/operation_status_provider.dart';
+import 'package:fima/presentation/providers/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,17 +9,17 @@ class BottomStatusBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final operationState = ref.watch(operationStatusProvider);
+    final fimaTheme = ref.watch(themeProvider);
 
     if (!operationState.isRunning || operationState.status == null) {
-      return const SizedBox.shrink(); // Hidden when idle
+      return const SizedBox.shrink();
     }
 
     final status = operationState.status!;
-    final theme = Theme.of(context);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: theme.colorScheme.surfaceContainer,
+      color: fimaTheme.surfaceColor,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -28,13 +29,13 @@ class BottomStatusBar extends ConsumerWidget {
               Expanded(
                 child: Text(
                   '${operationState.operationType}: ${status.currentItem}',
-                  style: theme.textTheme.bodySmall,
+                  style: TextStyle(fontSize: 12, color: fimaTheme.textColor),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 16),
               IconButton(
-                icon: const Icon(Icons.cancel, size: 20),
+                icon: Icon(Icons.cancel, size: 20, color: fimaTheme.textColor),
                 onPressed: () {
                   ref.read(operationStatusProvider.notifier).cancel();
                 },
@@ -51,12 +52,16 @@ class BottomStatusBar extends ConsumerWidget {
                 child: LinearProgressIndicator(
                   value: status.progress,
                   minHeight: 4,
+                  backgroundColor: fimaTheme.surfaceColor,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    fimaTheme.accentColor,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               Text(
                 '${(status.progress * 100).toStringAsFixed(1)}%',
-                style: theme.textTheme.bodySmall,
+                style: TextStyle(fontSize: 12, color: fimaTheme.textColor),
               ),
             ],
           ),

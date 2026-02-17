@@ -15,6 +15,7 @@ class UserSettings {
   final List<PathIndexEntry> pathIndexes;
   final int maxPathIndexes;
   final List<Workspace> workspaces;
+  final String themeName;
 
   const UserSettings({
     required this.leftPanelPath,
@@ -30,6 +31,7 @@ class UserSettings {
     this.pathIndexes = const [],
     this.maxPathIndexes = 50,
     this.workspaces = const [],
+    this.themeName = 'Light',
   });
 
   // Default settings
@@ -48,6 +50,7 @@ class UserSettings {
       pathIndexes: [],
       maxPathIndexes: 50,
       workspaces: [],
+      themeName: 'Light',
     );
   }
 
@@ -71,6 +74,7 @@ class UserSettings {
       workspaces: (json['workspaces'] as List? ?? [])
           .map((e) => Workspace.fromJson(e as Map<String, dynamic>))
           .toList(),
+      themeName: json['themeName'] as String? ?? 'Light',
     );
   }
 
@@ -90,6 +94,7 @@ class UserSettings {
       'pathIndexes': pathIndexes.map((e) => e.toJson()).toList(),
       'maxPathIndexes': maxPathIndexes,
       'workspaces': workspaces.map((e) => e.toJson()).toList(),
+      'themeName': themeName,
     };
   }
 
@@ -108,6 +113,7 @@ class UserSettings {
     List<PathIndexEntry>? pathIndexes,
     int? maxPathIndexes,
     List<Workspace>? workspaces,
+    String? themeName,
   }) {
     return UserSettings(
       leftPanelPath: leftPanelPath ?? this.leftPanelPath,
@@ -123,6 +129,7 @@ class UserSettings {
       pathIndexes: pathIndexes ?? this.pathIndexes,
       maxPathIndexes: maxPathIndexes ?? this.maxPathIndexes,
       workspaces: workspaces ?? this.workspaces,
+      themeName: themeName ?? this.themeName,
     );
   }
 }

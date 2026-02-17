@@ -1,8 +1,10 @@
+import 'package:fima/domain/entity/app_theme.dart';
 import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/entity/panel_state.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
+import 'package:fima/presentation/providers/theme_provider.dart';
 import 'package:fima/presentation/widgets/panel/path_editor_dialog.dart';
 import 'package:fima/presentation/widgets/panel/rename_field.dart';
 import 'package:flutter/gestures.dart';
@@ -144,6 +146,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     String title,
     SortColumn column,
     PanelState state,
+    FimaTheme fimaTheme,
     VoidCallback onTap,
   ) {
     final theme = Theme.of(context);
@@ -160,6 +163,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
               title,
               style: theme.textTheme.labelSmall?.copyWith(
                 fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                color: fimaTheme.textColor,
               ),
             ),
             if (isActive) ...[
@@ -167,6 +171,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
               Icon(
                 state.sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
                 size: 12,
+                color: fimaTheme.textColor,
               ),
             ],
           ],
@@ -204,10 +209,11 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   Widget build(BuildContext context) {
     final panelState = ref.watch(panelStateProvider(widget.panelId));
     final controller = ref.read(panelStateProvider(widget.panelId).notifier);
+    final fimaTheme = ref.watch(themeProvider);
     final theme = Theme.of(context);
     final settings = ref.watch(userSettingsProvider);
     final fontSize = settings.fontSize;
-    final itemHeight = fontSize + 16.0; // Dynamic height based on font size
+    final itemHeight = fontSize + 16.0;
 
     // Check if showHiddenFiles setting changed and refresh if needed
     if (_previousShowHiddenFiles != settings.showHiddenFiles) {
@@ -254,15 +260,15 @@ class _FilePanelState extends ConsumerState<FilePanel> {
         },
         child: Container(
           decoration: BoxDecoration(
-            border: Border.all(color: theme.colorScheme.outline),
-            color: theme.colorScheme.surface,
+            border: Border.all(color: fimaTheme.borderColor),
+            color: fimaTheme.backgroundColor,
           ),
           child: Column(
             children: [
               // Header with current path
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                color: theme.colorScheme.surfaceContainerHighest,
+                color: fimaTheme.surfaceColor,
                 child: Row(
                   children: [
                     Expanded(
@@ -275,13 +281,18 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                               : panelState.currentPath,
                           style: theme.textTheme.bodySmall?.copyWith(
                             fontSize: fontSize,
+                            color: fimaTheme.textColor,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ),
                     IconButton(
-                      icon: Icon(Icons.edit, size: fontSize + 2),
+                      icon: Icon(
+                        Icons.edit,
+                        size: fontSize + 2,
+                        color: fimaTheme.textColor,
+                      ),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       tooltip: 'Edit path',
@@ -294,7 +305,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
               // Column headers
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                color: theme.colorScheme.surfaceContainerHighest,
+                color: fimaTheme.surfaceColor,
                 child: Row(
                   children: [
                     const SizedBox(width: 24), // Icon space
@@ -304,6 +315,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                         'Name',
                         SortColumn.name,
                         panelState,
+                        fimaTheme,
                         () => controller.sort(SortColumn.name),
                       ),
                     ),
@@ -313,6 +325,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                         'Size',
                         SortColumn.size,
                         panelState,
+                        fimaTheme,
                         () => controller.sort(SortColumn.size),
                       ),
                     ),
@@ -322,6 +335,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                         'Modified',
                         SortColumn.modified,
                         panelState,
+                        fimaTheme,
                         () => controller.sort(SortColumn.modified),
                       ),
                     ),
@@ -359,7 +373,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                               focusState.activePanel == ActivePanel.right);
 
                       // Text color is red if selected (Marked), otherwise default
-                      final textColor = isSelected ? Colors.red : null;
+                      final textColor = isSelected
+                          ? Colors.red
+                          : fimaTheme.textColor;
 
                       return GestureDetector(
                         onTapDown: (_) {
@@ -367,15 +383,14 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                         },
                         child: Container(
                           decoration: BoxDecoration(
-                            // Background highlights focused item (Cursor)
-                            color: isFocused && isActivePanel
-                                ? theme.colorScheme.secondaryContainer
-                                : isFocused
-                                ? theme.colorScheme.surfaceContainerHigh
-                                : theme.colorScheme.surface,
+                            color: isSelected
+                                ? fimaTheme.selectedItemColor
+                                : isFocused && isActivePanel
+                                ? fimaTheme.focusedItemColor
+                                : fimaTheme.backgroundColor,
                             border: isFocused && isActivePanel
                                 ? Border.all(
-                                    color: theme.colorScheme.primary,
+                                    color: fimaTheme.accentColor,
                                     width: 1,
                                   )
                                 : null,

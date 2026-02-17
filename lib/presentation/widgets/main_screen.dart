@@ -1,6 +1,7 @@
 import 'package:fima/domain/entity/user_settings.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
+import 'package:fima/presentation/providers/theme_provider.dart';
 import 'package:fima/presentation/widgets/bottom_status_bar.dart';
 import 'package:fima/presentation/widgets/panel/file_panel.dart';
 import 'package:fima/presentation/widgets/popups/settings_dialog.dart';
@@ -47,10 +48,14 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(userSettingsProvider);
     final overlayState = ref.watch(overlayProvider);
+    final fimaTheme = ref.watch(themeProvider);
 
     return Scaffold(
+      backgroundColor: fimaTheme.backgroundColor,
       body: !_settingsLoaded
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+              child: CircularProgressIndicator(color: fimaTheme.accentColor),
+            )
           : Column(
               children: [
                 Expanded(
@@ -82,11 +87,11 @@ class _MainScreenState extends ConsumerState<MainScreen> {
                                 },
                                 child: Container(
                                   width: 4,
-                                  color: Theme.of(context).dividerColor,
+                                  color: fimaTheme.borderColor,
                                   child: Center(
                                     child: Container(
                                       width: 2,
-                                      color: Colors.grey,
+                                      color: fimaTheme.secondaryTextColor,
                                     ),
                                   ),
                                 ),
@@ -124,6 +129,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     double totalHeight,
     UserSettings settings,
   ) {
+    final fimaTheme = ref.watch(themeProvider);
     final splitterWidth = 4.0;
     final isLeftPanel = overlayState.isLeftPanel;
 
@@ -150,11 +156,11 @@ class _MainScreenState extends ConsumerState<MainScreen> {
         );
       case OverlayType.terminal:
         overlayContent = Container(
-          color: Colors.black87,
-          child: const Center(
+          color: fimaTheme.backgroundColor,
+          child: Center(
             child: Text(
               'Terminal - Coming soon',
-              style: TextStyle(color: Colors.white),
+              style: TextStyle(color: fimaTheme.textColor),
             ),
           ),
         );

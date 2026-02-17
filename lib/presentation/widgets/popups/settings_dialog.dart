@@ -1,5 +1,11 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:fima/domain/entity/app_theme.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
+import 'package:fima/presentation/providers/theme_provider.dart';
 import 'package:fima/presentation/widgets/panel/panel_overlay.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -24,7 +30,10 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent> {
   late double _fontSize;
   late bool _showHiddenFiles;
   late int _maxPathIndexes;
+  late String _selectedThemeName;
+  List<FimaTheme> _availableThemes = [];
   bool _hasChanges = false;
+  bool _themesLoaded = false;
 
   @override
   void initState() {
@@ -33,6 +42,24 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent> {
     _fontSize = settings.fontSize;
     _showHiddenFiles = settings.showHiddenFiles;
     _maxPathIndexes = settings.maxPathIndexes;
+    _selectedThemeName = settings.themeName;
+    _loadThemes();
+  }
+
+  Future<void> _loadThemes() async {
+    final themeService = ref.read(themeServiceProvider);
+    final themes = await themeService.loadThemes();
+    if (mounted) {
+      setState(() {
+        _availableThemes = themes;
+        _themesLoaded = true;
+        if (!_availableThemes.any((t) => t.name == _selectedThemeName)) {
+          if (_availableThemes.isNotEmpty) {
+            _selectedThemeName = _availableThemes.first.name;
+          }
+        }
+      });
+    }
   }
 
   void _onFontSizeChanged(double value) {
@@ -56,6 +83,86 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent> {
     });
   }
 
+  void _onThemeChanged(String? value) {
+    if (value != null) {
+      setState(() {
+        _selectedThemeName = value;
+        _hasChanges = true;
+      });
+    }
+  }
+
+  Future<void> _importTheme() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['theme'],
+      allowMultiple: true,
+    );
+
+    if (result == null || result.files.isEmpty) {
+      return;
+    }
+
+    final themeService = ref.read(themeServiceProvider);
+    int importedCount = 0;
+    String? lastImportedName;
+    String? errorMessage;
+
+    for (final file in result.files) {
+      if (file.path == null) continue;
+
+      try {
+        final fileObj = File(file.path!);
+        if (!await fileObj.exists()) {
+          errorMessage = 'File not found: ${file.name}';
+          continue;
+        }
+
+        final content = await fileObj.readAsString();
+        final json = jsonDecode(content) as Map<String, dynamic>;
+
+        if (!FimaTheme.isValidFimaThemeJson(json)) {
+          errorMessage =
+              'Invalid theme file: ${file.name}. Missing "fimaTheme" root key.';
+          continue;
+        }
+
+        final theme = FimaTheme.fromFimaThemeJson(json);
+        await themeService.saveTheme(theme);
+        importedCount++;
+        lastImportedName = theme.name;
+      } catch (e) {
+        errorMessage = 'Error importing ${file.name}: $e';
+      }
+    }
+
+    await _loadThemes();
+
+    if (mounted) {
+      if (importedCount > 0) {
+        setState(() {
+          if (lastImportedName != null) {
+            _selectedThemeName = lastImportedName;
+            _hasChanges = true;
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Imported $importedCount theme(s)'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else if (errorMessage != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _saveAndReload() async {
     final controller = ref.read(userSettingsProvider.notifier);
     controller.setFontSize(_fontSize);
@@ -63,6 +170,14 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent> {
       controller.toggleShowHiddenFiles();
     }
     controller.setMaxPathIndexes(_maxPathIndexes);
+
+    final currentThemeName = ref.read(userSettingsProvider).themeName;
+    if (_selectedThemeName != currentThemeName) {
+      controller.setThemeName(_selectedThemeName);
+      final themeController = ref.read(themeProvider.notifier);
+      await themeController.loadTheme(_selectedThemeName);
+    }
+
     await ref.read(userSettingsProvider.notifier).save();
   }
 
@@ -111,6 +226,12 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _buildSectionTitle(theme, 'Appearance'),
+                  const SizedBox(height: 16),
+                  _buildThemeSelector(theme),
+                  const SizedBox(height: 16),
+                  _buildImportThemeButton(theme),
+                  const SizedBox(height: 24),
                   _buildSectionTitle(theme, 'Display'),
                   const SizedBox(height: 16),
                   _buildFontSizeControl(theme),
@@ -156,6 +277,53 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent> {
         fontWeight: FontWeight.w600,
         color: theme.colorScheme.primary,
       ),
+    );
+  }
+
+  Widget _buildThemeSelector(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Theme', style: theme.textTheme.bodyLarge),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: theme.dividerColor),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: DropdownButton<String>(
+                  value: _selectedThemeName,
+                  isExpanded: true,
+                  underline: const SizedBox(),
+                  items: _availableThemes.map((t) {
+                    return DropdownMenuItem<String>(
+                      value: t.name,
+                      child: Text(t.name),
+                    );
+                  }).toList(),
+                  onChanged: _themesLoaded ? _onThemeChanged : null,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImportThemeButton(ThemeData theme) {
+    return Row(
+      children: [
+        OutlinedButton.icon(
+          onPressed: _importTheme,
+          icon: const Icon(Icons.file_download),
+          label: const Text('Import Theme'),
+        ),
+      ],
     );
   }
 

@@ -172,4 +172,10 @@ class SettingsController extends StateNotifier<UserSettings> {
     state = state.copyWith(workspaces: newWorkspaces);
     save();
   }
+
+  /// Update theme name
+  void setThemeName(String name) {
+    state = state.copyWith(themeName: name);
+    save();
+  }
 }

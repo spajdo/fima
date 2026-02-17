@@ -5,6 +5,7 @@ import 'package:fima/presentation/providers/action_provider.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
+import 'package:fima/presentation/providers/theme_provider.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -210,6 +211,7 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final fimaTheme = ref.watch(themeProvider);
     final itemCount = _mode == OmniMode.action
         ? _filteredActions.length
         : _mode == OmniMode.workspace
@@ -227,7 +229,7 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
         constraints: const BoxConstraints(maxWidth: 800),
         child: Material(
           elevation: 24,
-          color: Theme.of(context).colorScheme.surface,
+          color: fimaTheme.backgroundColor,
           borderRadius: BorderRadius.circular(8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -303,10 +305,11 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                         vertical: 12,
                       ),
                       prefixIcon: _mode == OmniMode.workspace
-                          ? const Icon(Icons.work)
+                          ? Icon(Icons.work, color: fimaTheme.textColor)
                           : null,
+                      hintStyle: TextStyle(color: fimaTheme.secondaryTextColor),
                     ),
-                    style: const TextStyle(fontSize: 18),
+                    style: TextStyle(fontSize: 18, color: fimaTheme.textColor),
                   ),
                 ),
               ),
@@ -400,12 +403,11 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
     required bool isSelected,
     required VoidCallback onTap,
   }) {
+    final fimaTheme = ref.watch(themeProvider);
     return InkWell(
       onTap: onTap,
       child: Container(
-        color: isSelected
-            ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
-            : null,
+        color: isSelected ? fimaTheme.accentColor.withValues(alpha: 0.1) : null,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         alignment: Alignment.centerLeft,
         child: Row(
@@ -415,6 +417,7 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                 label,
                 style: TextStyle(
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: fimaTheme.textColor,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -425,7 +428,7 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                 shortcut,
                 style: TextStyle(
                   fontSize: 12,
-                  color: Theme.of(context).textTheme.bodySmall?.color,
+                  color: fimaTheme.secondaryTextColor,
                 ),
               ),
           ],
@@ -442,17 +445,16 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
     required VoidCallback onEdit,
     required VoidCallback onDelete,
   }) {
+    final fimaTheme = ref.watch(themeProvider);
     return InkWell(
       onTap: onTap,
       child: Container(
-        color: isSelected
-            ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
-            : null,
+        color: isSelected ? fimaTheme.accentColor.withValues(alpha: 0.1) : null,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Icon(Icons.work, size: 24),
+            Icon(Icons.work, size: 24, color: fimaTheme.textColor),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -460,6 +462,7 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                 style: TextStyle(
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                   fontSize: 16,
+                  color: fimaTheme.textColor,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -495,10 +498,9 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
     required bool isFocused,
     required VoidCallback onTap,
   }) {
+    final fimaTheme = ref.watch(themeProvider);
     return Material(
-      color: isFocused
-          ? Theme.of(context).colorScheme.primary
-          : Colors.transparent,
+      color: isFocused ? fimaTheme.accentColor : Colors.transparent,
       borderRadius: BorderRadius.circular(4),
       child: InkWell(
         borderRadius: BorderRadius.circular(4),
@@ -508,9 +510,7 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
           child: Icon(
             icon,
             size: 20,
-            color: isFocused
-                ? Theme.of(context).colorScheme.onPrimary
-                : Theme.of(context).colorScheme.onSurfaceVariant,
+            color: isFocused ? Colors.white : fimaTheme.secondaryTextColor,
           ),
         ),
       ),
