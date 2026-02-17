@@ -4,6 +4,7 @@ import 'package:fima/infrastructure/service/linux_application_service.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
+import 'package:fima/presentation/providers/overlay_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart';
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
@@ -255,6 +256,16 @@ class ActionGenerator {
               ref.read(userSettingsProvider.notifier).addWorkspace(workspace);
             }
           });
+        },
+      ),
+      AppAction(
+        id: 'settings',
+        label: 'Settings',
+        shortcut: 'Ctrl+Alt+S',
+        callback: () {
+          final focusState = ref.read(focusProvider);
+          final isLeftPanel = focusState.activePanel == ActivePanel.left;
+          ref.read(overlayProvider.notifier).showSettings(isLeftPanel);
         },
       ),
     ];

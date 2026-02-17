@@ -66,6 +66,15 @@ class SettingsController extends StateNotifier<UserSettings> {
     save(); // Auto-save
   }
 
+  /// Update max path indexes
+  void setMaxPathIndexes(int count) {
+    final newCount = count.clamp(10, 100);
+    if (state.maxPathIndexes != newCount) {
+      state = state.copyWith(maxPathIndexes: newCount);
+      save(); // Auto-save
+    }
+  }
+
   /// Update window size and position
   void updateWindowState({
     double? width,

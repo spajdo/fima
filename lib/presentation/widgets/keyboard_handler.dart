@@ -8,6 +8,7 @@ import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/internal_clipboard_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
+import 'package:fima/presentation/providers/overlay_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart';
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
@@ -42,6 +43,14 @@ class KeyboardHandler extends ConsumerWidget {
         // The RenameField will handle Escape, Enter, and text input.
         if (currentPanelState.editingPath != null) {
           return KeyEventResult.ignored;
+        }
+
+        // If overlay is active, handle ESC to close it
+        final overlayState = ref.read(overlayProvider);
+        if (overlayState.isActive &&
+            event.logicalKey == LogicalKeyboardKey.escape) {
+          ref.read(overlayProvider.notifier).close();
+          return KeyEventResult.handled;
         }
 
         // Navigation keys
@@ -277,6 +286,16 @@ class KeyboardHandler extends ConsumerWidget {
               ref.read(userSettingsProvider.notifier).addWorkspace(workspace);
             }
           });
+          return KeyEventResult.handled;
+        }
+
+        // Ctrl+Alt+S - Settings
+        if (event.logicalKey == LogicalKeyboardKey.keyS &&
+            HardwareKeyboard.instance.isControlPressed &&
+            HardwareKeyboard.instance.isAltPressed) {
+          final focusState = ref.read(focusProvider);
+          final isLeftPanel = focusState.activePanel == ActivePanel.left;
+          ref.read(overlayProvider.notifier).showSettings(isLeftPanel);
           return KeyEventResult.handled;
         }
 
