@@ -63,7 +63,6 @@ class SettingsService {
       final json = settings.toJson();
       final contents = const JsonEncoder.withIndent('  ').convert(json);
       await file.writeAsString(contents);
-      debugPrint('Settings saved to $path');
     } catch (e) {
       debugPrint('Error saving settings: $e');
       // Don't rethrow - we don't want to crash the app if settings can't be saved
@@ -75,7 +74,7 @@ class SettingsService {
     try {
       final path = await getSettingsPath();
       final file = File(path);
-      
+
       if (await file.exists()) {
         await file.delete();
         debugPrint('Settings file deleted: $path');

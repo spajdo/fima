@@ -29,6 +29,10 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   final ScrollController _scrollController = ScrollController();
   bool _previousShowHiddenFiles = false;
 
+  int? _lastTappedIndex;
+  DateTime? _lastTapTime;
+  static const _doubleTapDelay = Duration(milliseconds: 300);
+
   @override
   void initState() {
     super.initState();
@@ -50,6 +54,39 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   void dispose() {
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _handleTapDown(
+    int index,
+    FileSystemItem item,
+    PanelController controller,
+  ) {
+    final now = DateTime.now();
+
+    if (_lastTappedIndex == index &&
+        _lastTapTime != null &&
+        now.difference(_lastTapTime!) < _doubleTapDelay) {
+      if (item.isDirectory || item.isParentDetails) {
+        if (item.isParentDetails) {
+          controller.navigateToParent();
+        } else {
+          controller.loadPath(item.path, addToVisited: true);
+        }
+      } else {
+        OpenFile.open(item.path);
+      }
+      _lastTappedIndex = null;
+      _lastTapTime = null;
+    } else {
+      ref
+          .read(focusProvider.notifier)
+          .setActivePanel(
+            widget.panelId == 'left' ? ActivePanel.left : ActivePanel.right,
+          );
+      controller.setFocusedIndex(index);
+      _lastTappedIndex = index;
+      _lastTapTime = now;
+    }
   }
 
   void _scrollToIndex(int index, int itemCount, double itemHeight) {
@@ -202,215 +239,218 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           }
         }
       },
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border.all(color: theme.colorScheme.outline),
-          color: theme.colorScheme.surface,
-        ),
-        child: Column(
-          children: [
-            // Header with current path
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              color: theme.colorScheme.surfaceContainerHighest,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () =>
-                          _showPathEditor(context, panelState.currentPath),
-                      child: Text(
-                        panelState.currentPath.isEmpty
-                            ? '...'
-                            : panelState.currentPath,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontSize: fontSize,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          ref
+              .read(focusProvider.notifier)
+              .setActivePanel(
+                widget.panelId == 'left' ? ActivePanel.left : ActivePanel.right,
+              );
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: theme.colorScheme.outline),
+            color: theme.colorScheme.surface,
+          ),
+          child: Column(
+            children: [
+              // Header with current path
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                color: theme.colorScheme.surfaceContainerHighest,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () =>
+                            _showPathEditor(context, panelState.currentPath),
+                        child: Text(
+                          panelState.currentPath.isEmpty
+                              ? '...'
+                              : panelState.currentPath,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: fontSize,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.edit, size: fontSize + 2),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    tooltip: 'Edit path',
-                    onPressed: () =>
-                        _showPathEditor(context, panelState.currentPath),
-                  ),
-                ],
+                    IconButton(
+                      icon: Icon(Icons.edit, size: fontSize + 2),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      tooltip: 'Edit path',
+                      onPressed: () =>
+                          _showPathEditor(context, panelState.currentPath),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            // Column headers
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              color: theme.colorScheme.surfaceContainerHighest,
-              child: Row(
-                children: [
-                  const SizedBox(width: 24), // Icon space
-                  Expanded(
-                    flex: 3,
-                    child: _buildColumnHeader(
-                      'Name',
-                      SortColumn.name,
-                      panelState,
-                      () => controller.sort(SortColumn.name),
+              // Column headers
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                color: theme.colorScheme.surfaceContainerHighest,
+                child: Row(
+                  children: [
+                    const SizedBox(width: 24), // Icon space
+                    Expanded(
+                      flex: 3,
+                      child: _buildColumnHeader(
+                        'Name',
+                        SortColumn.name,
+                        panelState,
+                        () => controller.sort(SortColumn.name),
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    flex: 1,
-                    child: _buildColumnHeader(
-                      'Size',
-                      SortColumn.size,
-                      panelState,
-                      () => controller.sort(SortColumn.size),
+                    Expanded(
+                      flex: 1,
+                      child: _buildColumnHeader(
+                        'Size',
+                        SortColumn.size,
+                        panelState,
+                        () => controller.sort(SortColumn.size),
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: _buildColumnHeader(
-                      'Modified',
-                      SortColumn.modified,
-                      panelState,
-                      () => controller.sort(SortColumn.modified),
+                    Expanded(
+                      flex: 2,
+                      child: _buildColumnHeader(
+                        'Modified',
+                        SortColumn.modified,
+                        panelState,
+                        () => controller.sort(SortColumn.modified),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            // File list
-            Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                itemExtent: itemHeight,
-                itemCount: panelState.items.length,
-                itemBuilder: (context, index) {
-                  final item = panelState.items[index];
-                  final isSelected = panelState.selectedItems.contains(
-                    item.path,
-                  );
-                  final isFocused = panelState.focusedIndex == index;
-                  final focusState = ref.watch(focusProvider);
-                  final isActivePanel =
-                      (widget.panelId == 'left' &&
-                          focusState.activePanel == ActivePanel.left) ||
-                      (widget.panelId == 'right' &&
-                          focusState.activePanel == ActivePanel.right);
+              // File list
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    ref
+                        .read(focusProvider.notifier)
+                        .setActivePanel(
+                          widget.panelId == 'left'
+                              ? ActivePanel.left
+                              : ActivePanel.right,
+                        );
+                  },
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    itemExtent: itemHeight,
+                    itemCount: panelState.items.length,
+                    itemBuilder: (context, index) {
+                      final item = panelState.items[index];
+                      final isSelected = panelState.selectedItems.contains(
+                        item.path,
+                      );
+                      final isFocused = panelState.focusedIndex == index;
+                      final focusState = ref.watch(focusProvider);
+                      final isActivePanel =
+                          (widget.panelId == 'left' &&
+                              focusState.activePanel == ActivePanel.left) ||
+                          (widget.panelId == 'right' &&
+                              focusState.activePanel == ActivePanel.right);
 
-                  // Text color is red if selected (Marked), otherwise default
-                  final textColor = isSelected ? Colors.red : null;
+                      // Text color is red if selected (Marked), otherwise default
+                      final textColor = isSelected ? Colors.red : null;
 
-                  return GestureDetector(
-                    onTap: () {
-                      // Single click: Set focus to this panel and index
-                      ref
-                          .read(focusProvider.notifier)
-                          .setActivePanel(
-                            widget.panelId == 'left'
-                                ? ActivePanel.left
-                                : ActivePanel.right,
-                          );
-                      controller.setFocusedIndex(index);
-                      // No selection update on simple click
-                    },
-                    onDoubleTap: () {
-                      // Double click: Navigate or open
-                      if (item.isDirectory || item.isParentDetails) {
-                        if (item.isParentDetails) {
-                          controller.navigateToParent();
-                        } else {
-                          controller.loadPath(item.path, addToVisited: true);
-                        }
-                      } else {
-                        OpenFile.open(item.path);
-                      }
-                    },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        // Background highlights focused item (Cursor)
-                        color: isFocused && isActivePanel
-                            ? theme.colorScheme.secondaryContainer
-                            : isFocused
-                            ? theme.colorScheme.surfaceContainerHigh
-                            : theme.colorScheme.surface,
-                        border: isFocused && isActivePanel
-                            ? Border.all(
-                                color: theme.colorScheme.primary,
-                                width: 1,
-                              )
-                            : null,
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: fontSize + 10,
-                            child: _buildFileIcon(item, fontSize + 2),
-                          ),
-                          Expanded(
-                            flex: 3,
-                            child: item.path == panelState.editingPath
-                                ? RenameField(
-                                    initialValue: item.name,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: textColor,
-                                      fontSize: fontSize,
-                                    ),
-                                    onSubmitted: (newName) {
-                                      controller.renameItem(newName);
-                                    },
-                                    onCancel: () {
-                                      controller.cancelRenaming();
-                                    },
+                      return GestureDetector(
+                        onTapDown: (_) {
+                          _handleTapDown(index, item, controller);
+                        },
+                        child: Container(
+                          decoration: BoxDecoration(
+                            // Background highlights focused item (Cursor)
+                            color: isFocused && isActivePanel
+                                ? theme.colorScheme.secondaryContainer
+                                : isFocused
+                                ? theme.colorScheme.surfaceContainerHigh
+                                : theme.colorScheme.surface,
+                            border: isFocused && isActivePanel
+                                ? Border.all(
+                                    color: theme.colorScheme.primary,
+                                    width: 1,
                                   )
-                                : Text(
-                                    item.name,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: textColor,
-                                      fontSize: fontSize,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
+                                : null,
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: fontSize + 10,
+                                child: _buildFileIcon(item, fontSize + 2),
+                              ),
+                              Expanded(
+                                flex: 3,
+                                child: item.path == panelState.editingPath
+                                    ? RenameField(
+                                        initialValue: item.name,
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: textColor,
+                                              fontSize: fontSize,
+                                            ),
+                                        onSubmitted: (newName) {
+                                          controller.renameItem(newName);
+                                        },
+                                        onCancel: () {
+                                          controller.cancelRenaming();
+                                        },
+                                      )
+                                    : Text(
+                                        item.name,
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: textColor,
+                                              fontSize: fontSize,
+                                            ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                              ),
+                              Expanded(
+                                flex: 1,
+                                child: Text(
+                                  item.isDirectory && !item.isParentDetails
+                                      ? '<DIR>'
+                                      : item.isParentDetails
+                                      ? ''
+                                      : _formatSize(item.size),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: textColor,
+                                    fontSize: fontSize,
                                   ),
-                          ),
-                          Expanded(
-                            flex: 1,
-                            child: Text(
-                              item.isDirectory && !item.isParentDetails
-                                  ? '<DIR>'
-                                  : item.isParentDetails
-                                  ? ''
-                                  : _formatSize(item.size),
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: textColor,
-                                fontSize: fontSize,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Expanded(
-                            flex: 2,
-                            child: Text(
-                              item.isParentDetails
-                                  ? ''
-                                  : _dateFormat.format(item.modified),
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: textColor,
-                                fontSize: fontSize,
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  item.isParentDetails
+                                      ? ''
+                                      : _dateFormat.format(item.modified),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: textColor,
+                                    fontSize: fontSize,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
+                        ),
+                      );
+                    },
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
