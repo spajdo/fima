@@ -57,6 +57,18 @@ class KeyMapActionDefs {
       defaultShortcutMacOS: 'End',
     ),
     KeyMapAction(
+      id: 'jumpToTop',
+      label: 'Jump to Top',
+      defaultShortcutLinux: 'Arrow Left',
+      defaultShortcutMacOS: 'Arrow Left',
+    ),
+    KeyMapAction(
+      id: 'jumpToBottom',
+      label: 'Jump to Bottom',
+      defaultShortcutLinux: 'Arrow Right',
+      defaultShortcutMacOS: 'Arrow Right',
+    ),
+    KeyMapAction(
       id: 'enterDirectory',
       label: 'Enter Directory / Open File',
       defaultShortcutLinux: 'Enter',

@@ -92,6 +92,14 @@ class KeyboardHandler extends ConsumerWidget {
           panelController.moveToLast();
           return KeyEventResult.handled;
         }
+        if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+          panelController.moveToFirst();
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+          panelController.moveToLast();
+          return KeyEventResult.handled;
+        }
 
         // Directory navigation
         if (event.logicalKey == LogicalKeyboardKey.enter) {
@@ -823,6 +831,12 @@ class KeyboardHandler extends ConsumerWidget {
         panelController.moveToFirst();
         return KeyEventResult.handled;
       case 'moveToLast':
+        panelController.moveToLast();
+        return KeyEventResult.handled;
+      case 'jumpToTop':
+        panelController.moveToFirst();
+        return KeyEventResult.handled;
+      case 'jumpToBottom':
         panelController.moveToLast();
         return KeyEventResult.handled;
       case 'enterDirectory':
