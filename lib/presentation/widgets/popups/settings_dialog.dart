@@ -5,6 +5,7 @@ import 'package:fima/domain/entity/app_theme.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
 import 'package:fima/presentation/widgets/panel/panel_overlay.dart';
+import 'package:fima/presentation/widgets/popups/key_map_tab.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,7 +27,9 @@ class SettingsDialogContent extends ConsumerStatefulWidget {
       _SettingsDialogContentState();
 }
 
-class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent> {
+class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
   late double _fontSize;
   late bool _showHiddenFiles;
   late int _maxPathIndexes;
@@ -38,12 +41,19 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     final settings = ref.read(userSettingsProvider);
     _fontSize = settings.fontSize;
     _showHiddenFiles = settings.showHiddenFiles;
     _maxPathIndexes = settings.maxPathIndexes;
     _selectedThemeName = settings.themeName;
     _loadThemes();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadThemes() async {
@@ -219,30 +229,20 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildHeader(theme),
+          _buildTabBar(theme),
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSectionTitle(theme, 'Appearance'),
-                  const SizedBox(height: 16),
-                  _buildThemeSelector(theme),
-                  const SizedBox(height: 16),
-                  _buildImportThemeButton(theme),
-                  const SizedBox(height: 24),
-                  _buildSectionTitle(theme, 'Display'),
-                  const SizedBox(height: 16),
-                  _buildFontSizeControl(theme),
-                  const SizedBox(height: 16),
-                  _buildShowHiddenFilesControl(theme),
-                  const SizedBox(height: 24),
-                  _buildSectionTitle(theme, 'Performance'),
-                  const SizedBox(height: 16),
-                  _buildMaxPathIndexesControl(theme),
-                ],
-              ),
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildSettingsTab(theme),
+                KeyMapTab(
+                  onShortcutChanged: () {
+                    setState(() {
+                      _hasChanges = true;
+                    });
+                  },
+                ),
+              ],
             ),
           ),
         ],
@@ -250,21 +250,46 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent> {
     );
   }
 
-  Widget _buildHeader(ThemeData theme) {
+  Widget _buildTabBar(ThemeData theme) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
         border: Border(bottom: BorderSide(color: theme.dividerColor)),
       ),
-      child: Row(
+      child: TabBar(
+        controller: _tabController,
+        labelColor: theme.colorScheme.primary,
+        unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+        indicatorColor: theme.colorScheme.primary,
+        tabs: const [
+          Tab(text: 'Settings'),
+          Tab(text: 'Key Map'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsTab(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Settings',
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          _buildSectionTitle(theme, 'Appearance'),
+          const SizedBox(height: 16),
+          _buildThemeSelector(theme),
+          const SizedBox(height: 16),
+          _buildImportThemeButton(theme),
+          const SizedBox(height: 24),
+          _buildSectionTitle(theme, 'Display'),
+          const SizedBox(height: 16),
+          _buildFontSizeControl(theme),
+          const SizedBox(height: 16),
+          _buildShowHiddenFilesControl(theme),
+          const SizedBox(height: 24),
+          _buildSectionTitle(theme, 'Performance'),
+          const SizedBox(height: 16),
+          _buildMaxPathIndexesControl(theme),
         ],
       ),
     );

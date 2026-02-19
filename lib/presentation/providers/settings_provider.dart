@@ -1,3 +1,4 @@
+import 'package:fima/domain/entity/key_map_action.dart';
 import 'package:fima/domain/entity/path_index_entry.dart';
 import 'package:fima/domain/entity/user_settings.dart';
 import 'package:fima/domain/entity/workspace.dart';
@@ -176,6 +177,74 @@ class SettingsController extends StateNotifier<UserSettings> {
   /// Update theme name
   void setThemeName(String name) {
     state = state.copyWith(themeName: name);
+    save();
+  }
+
+  /// Set a custom keyboard shortcut for an action
+  void setKeyMapShortcut(String actionId, String shortcut) {
+    final newKeyMap = Map<String, String>.from(state.keyMap);
+    newKeyMap[actionId] = shortcut;
+    state = state.copyWith(keyMap: newKeyMap);
+    save();
+  }
+
+  /// Remove a custom keyboard shortcut for an action
+  void removeKeyMapShortcut(String actionId) {
+    final newKeyMap = Map<String, String>.from(state.keyMap);
+    newKeyMap.remove(actionId);
+    state = state.copyWith(keyMap: newKeyMap);
+    save();
+  }
+
+  /// Get the effective shortcut for an action (custom or default)
+  String? getEffectiveShortcut(String actionId) {
+    final customShortcut = state.keyMap[actionId];
+    if (customShortcut != null && customShortcut.isNotEmpty) {
+      return customShortcut;
+    }
+    return KeyMapActionDefs.getDefaultShortcut(actionId);
+  }
+
+  /// Get all custom shortcuts
+  Map<String, String> getAllCustomShortcuts() {
+    return Map.unmodifiable(state.keyMap);
+  }
+
+  /// Check if an action has a custom shortcut
+  bool hasCustomShortcut(String actionId) {
+    return state.keyMap.containsKey(actionId);
+  }
+
+  /// Find action by shortcut (returns actionId or null)
+  String? findActionByShortcut(String shortcut) {
+    for (final action in KeyMapActionDefs.all) {
+      final effectiveShortcut = getEffectiveShortcut(action.id);
+      if (effectiveShortcut == shortcut) {
+        return action.id;
+      }
+    }
+    return null;
+  }
+
+  /// Find all conflicting actions for a given shortcut (excluding a specific actionId)
+  List<String> findConflictingActions(
+    String shortcut, {
+    String? excludeActionId,
+  }) {
+    final conflicts = <String>[];
+    for (final action in KeyMapActionDefs.all) {
+      if (excludeActionId != null && action.id == excludeActionId) continue;
+      final effectiveShortcut = getEffectiveShortcut(action.id);
+      if (effectiveShortcut == shortcut) {
+        conflicts.add(action.label);
+      }
+    }
+    return conflicts;
+  }
+
+  /// Reset all keyboard shortcuts to defaults
+  void resetKeyMapToDefault() {
+    state = state.copyWith(keyMap: {});
     save();
   }
 }

@@ -53,6 +53,28 @@ class KeyboardHandler extends ConsumerWidget {
           return KeyEventResult.handled;
         }
 
+        // Check for custom keyboard shortcuts
+        final currentShortcut = _buildCurrentShortcut(event);
+        if (currentShortcut.isNotEmpty) {
+          final actionId = ref
+              .read(userSettingsProvider.notifier)
+              .findActionByShortcut(currentShortcut);
+          if (actionId != null) {
+            final result = _handleCustomShortcut(
+              ref,
+              context,
+              actionId,
+              activePanelId,
+              panelController,
+              currentPanelState,
+              currentShortcut,
+            );
+            if (result != null) {
+              return result;
+            }
+          }
+        }
+
         // Navigation keys
         if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
           panelController.moveSelectionUp();
@@ -672,5 +694,311 @@ class KeyboardHandler extends ConsumerWidget {
     final file = File(path);
     final dir = Directory(path);
     return file.existsSync() || dir.existsSync();
+  }
+
+  String _buildCurrentShortcut(KeyEvent event) {
+    final modifiers = <String>[];
+    final key = event.logicalKey;
+
+    if (HardwareKeyboard.instance.isControlPressed ||
+        key == LogicalKeyboardKey.controlLeft ||
+        key == LogicalKeyboardKey.controlRight) {
+      modifiers.add('Ctrl');
+    }
+    if (HardwareKeyboard.instance.isAltPressed ||
+        key == LogicalKeyboardKey.altLeft ||
+        key == LogicalKeyboardKey.altRight) {
+      modifiers.add('Alt');
+    }
+    if (HardwareKeyboard.instance.isShiftPressed ||
+        key == LogicalKeyboardKey.shiftLeft ||
+        key == LogicalKeyboardKey.shiftRight) {
+      modifiers.add('Shift');
+    }
+    if (HardwareKeyboard.instance.isMetaPressed ||
+        key == LogicalKeyboardKey.metaLeft ||
+        key == LogicalKeyboardKey.metaRight) {
+      if (Platform.isMacOS) {
+        modifiers.add('⌘');
+      } else {
+        modifiers.add('Win');
+      }
+    }
+
+    String keyLabel;
+    if (key == LogicalKeyboardKey.arrowUp) {
+      keyLabel = 'Arrow Up';
+    } else if (key == LogicalKeyboardKey.arrowDown) {
+      keyLabel = 'Arrow Down';
+    } else if (key == LogicalKeyboardKey.arrowLeft) {
+      keyLabel = 'Arrow Left';
+    } else if (key == LogicalKeyboardKey.arrowRight) {
+      keyLabel = 'Arrow Right';
+    } else if (key == LogicalKeyboardKey.space) {
+      keyLabel = 'Space';
+    } else if (key == LogicalKeyboardKey.enter) {
+      keyLabel = 'Enter';
+    } else if (key == LogicalKeyboardKey.backspace) {
+      keyLabel = 'Backspace';
+    } else if (key == LogicalKeyboardKey.delete) {
+      keyLabel = 'Delete';
+    } else if (key == LogicalKeyboardKey.escape) {
+      keyLabel = 'Escape';
+    } else if (key == LogicalKeyboardKey.tab) {
+      keyLabel = 'Tab';
+    } else if (key == LogicalKeyboardKey.home) {
+      keyLabel = 'Home';
+    } else if (key == LogicalKeyboardKey.end) {
+      keyLabel = 'End';
+    } else if (key == LogicalKeyboardKey.f1) {
+      keyLabel = 'F1';
+    } else if (key == LogicalKeyboardKey.f2) {
+      keyLabel = 'F2';
+    } else if (key == LogicalKeyboardKey.f3) {
+      keyLabel = 'F3';
+    } else if (key == LogicalKeyboardKey.f4) {
+      keyLabel = 'F4';
+    } else if (key == LogicalKeyboardKey.f5) {
+      keyLabel = 'F5';
+    } else if (key == LogicalKeyboardKey.f6) {
+      keyLabel = 'F6';
+    } else if (key == LogicalKeyboardKey.f7) {
+      keyLabel = 'F7';
+    } else if (key == LogicalKeyboardKey.f8) {
+      keyLabel = 'F8';
+    } else if (key == LogicalKeyboardKey.f9) {
+      keyLabel = 'F9';
+    } else if (key == LogicalKeyboardKey.f10) {
+      keyLabel = 'F10';
+    } else if (key == LogicalKeyboardKey.f11) {
+      keyLabel = 'F11';
+    } else if (key == LogicalKeyboardKey.f12) {
+      keyLabel = 'F12';
+    } else {
+      keyLabel = key.keyLabel.toUpperCase();
+      if (keyLabel.length == 1) {
+        keyLabel = keyLabel;
+      }
+    }
+
+    if (keyLabel.isEmpty) {
+      return '';
+    }
+
+    modifiers.sort((a, b) {
+      final order = Platform.isMacOS
+          ? ['⌃', '⌥', '⇧', '⌘', 'Win']
+          : ['Ctrl', 'Alt', 'Shift', 'Win'];
+      final aIndex = order.indexOf(a);
+      final bIndex = order.indexOf(b);
+      if (aIndex != -1 && bIndex != -1) {
+        return aIndex.compareTo(bIndex);
+      }
+      if (aIndex != -1) return -1;
+      if (bIndex != -1) return 1;
+      return a.compareTo(b);
+    });
+
+    final parts = [...modifiers, keyLabel];
+    return parts.join('+');
+  }
+
+  KeyEventResult? _handleCustomShortcut(
+    WidgetRef ref,
+    BuildContext context,
+    String actionId,
+    String activePanelId,
+    dynamic panelController,
+    dynamic currentPanelState,
+    String currentShortcut,
+  ) {
+    switch (actionId) {
+      case 'moveUp':
+        panelController.moveSelectionUp();
+        return KeyEventResult.handled;
+      case 'moveDown':
+        panelController.moveSelectionDown();
+        return KeyEventResult.handled;
+      case 'moveToFirst':
+        panelController.moveToFirst();
+        return KeyEventResult.handled;
+      case 'moveToLast':
+        panelController.moveToLast();
+        return KeyEventResult.handled;
+      case 'enterDirectory':
+        panelController.enterFocusedItem();
+        return KeyEventResult.handled;
+      case 'navigateParent':
+        panelController.navigateToParent();
+        return KeyEventResult.handled;
+      case 'toggleSelection':
+        panelController.toggleSelectionAtFocus();
+        return KeyEventResult.handled;
+      case 'selectAll':
+        panelController.selectAll();
+        return KeyEventResult.handled;
+      case 'deselectAll':
+        panelController.deselectAll();
+        return KeyEventResult.handled;
+      case 'copyToClipboard':
+        _copyToClipboard(ref, activePanelId, ClipboardOperation.copy);
+        return KeyEventResult.handled;
+      case 'cutToClipboard':
+        _copyToClipboard(ref, activePanelId, ClipboardOperation.cut);
+        return KeyEventResult.handled;
+      case 'pasteFromClipboard':
+        _pasteFromClipboard(ref, activePanelId);
+        return KeyEventResult.handled;
+      case 'switchPanel':
+        ref.read(focusProvider.notifier).switchPanel();
+        return KeyEventResult.handled;
+      case 'toggleHiddenFiles':
+        ref.read(userSettingsProvider.notifier).toggleShowHiddenFiles();
+        return KeyEventResult.handled;
+      case 'deleteToTrash':
+        panelController.deleteSelectedItems(permanent: false);
+        return KeyEventResult.handled;
+      case 'permanentDelete':
+        _showDeleteConfirmation(context, ref, activePanelId, permanent: true);
+        return KeyEventResult.handled;
+      case 'copyOperation':
+        ref.read(operationStatusProvider.notifier).startCopy();
+        return KeyEventResult.handled;
+      case 'moveOperation':
+        ref.read(operationStatusProvider.notifier).startMove();
+        return KeyEventResult.handled;
+      case 'rename':
+        panelController.startRenaming();
+        return KeyEventResult.handled;
+      case 'createDirectory':
+        _showCreateDialog(context, ref, activePanelId, isDirectory: true);
+        return KeyEventResult.handled;
+      case 'createFile':
+        _showCreateDialog(context, ref, activePanelId, isDirectory: false);
+        return KeyEventResult.handled;
+      case 'openTerminal':
+        final path = ref.read(panelStateProvider(activePanelId)).currentPath;
+        if (path.isNotEmpty) {
+          _openTerminal(path);
+        }
+        return KeyEventResult.handled;
+      case 'openWith':
+        _openWithApplication(context, ref);
+        return KeyEventResult.handled;
+      case 'openDefaultManager':
+        final path = ref.read(panelStateProvider(activePanelId)).currentPath;
+        if (path.isNotEmpty) {
+          _openFileManager(path);
+        }
+        return KeyEventResult.handled;
+      case 'saveWorkspace':
+        _showSaveWorkspaceDialog(context, ref);
+        return KeyEventResult.handled;
+      case 'settings':
+        final focusState = ref.read(focusProvider);
+        final isLeftPanel = focusState.activePanel == ActivePanel.left;
+        ref.read(overlayProvider.notifier).showSettings(isLeftPanel);
+        return KeyEventResult.handled;
+      case 'workspaceDialog':
+        showDialog(
+          context: context,
+          barrierColor: Colors.transparent,
+          builder: (context) => const OmniDialog(initialText: 'w '),
+        );
+        return KeyEventResult.handled;
+      case 'clearQuickFilter':
+        panelController.clearQuickFilter();
+        return KeyEventResult.handled;
+      case 'clearFilter':
+        if (currentPanelState.quickFilterText.isNotEmpty) {
+          panelController.clearQuickFilter();
+        }
+        return KeyEventResult.handled;
+      default:
+        return null;
+    }
+  }
+
+  void _showDeleteConfirmation(
+    BuildContext context,
+    WidgetRef ref,
+    String activePanelId, {
+    required bool permanent,
+  }) {
+    final panelState = ref.read(panelStateProvider(activePanelId));
+    int count = panelState.selectedItems.length;
+    if (count == 0 &&
+        panelState.focusedIndex >= 0 &&
+        panelState.focusedIndex < panelState.items.length &&
+        !panelState.items[panelState.focusedIndex].isParentDetails) {
+      count = 1;
+    }
+
+    if (count > 0) {
+      showDialog(
+        context: context,
+        barrierColor: Colors.transparent,
+        builder: (context) => DeleteConfirmationDialog(count: count),
+      ).then((confirmed) {
+        if (confirmed == true) {
+          ref
+              .read(panelStateProvider(activePanelId).notifier)
+              .deleteSelectedItems(permanent: permanent);
+        }
+      });
+    }
+  }
+
+  void _showCreateDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String activePanelId, {
+    required bool isDirectory,
+  }) {
+    final panelState = ref.read(panelStateProvider(activePanelId));
+    if (panelState.currentPath.isEmpty) return;
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.transparent,
+      builder: (context) => TextInputDialog(
+        title: isDirectory ? 'Create Directory' : 'Create File',
+        label: isDirectory ? 'Directory Name' : 'File Name',
+        okButtonLabel: 'Create',
+      ),
+    ).then((name) {
+      if (name != null && name.toString().isNotEmpty) {
+        final controller = ref.read(panelStateProvider(activePanelId).notifier);
+        if (isDirectory) {
+          controller.createDirectory(name.toString());
+        } else {
+          controller.createFile(name.toString());
+        }
+      }
+    });
+  }
+
+  void _showSaveWorkspaceDialog(BuildContext context, WidgetRef ref) {
+    final leftState = ref.read(panelStateProvider('left'));
+    final rightState = ref.read(panelStateProvider('right'));
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.transparent,
+      builder: (context) => const TextInputDialog(
+        title: 'Save Workspace',
+        label: 'Workspace Name',
+        okButtonLabel: 'Save',
+      ),
+    ).then((name) {
+      if (name != null && name.toString().isNotEmpty) {
+        final workspace = Workspace(
+          name: name.toString(),
+          leftPanelPath: leftState.currentPath,
+          rightPanelPath: rightState.currentPath,
+        );
+        ref.read(userSettingsProvider.notifier).addWorkspace(workspace);
+      }
+    });
   }
 }
