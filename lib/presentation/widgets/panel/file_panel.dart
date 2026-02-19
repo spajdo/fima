@@ -31,6 +31,15 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   final ScrollController _scrollController = ScrollController();
   bool _previousShowHiddenFiles = false;
 
+  // Column width fractions (the third column gets the remainder).
+  // Defaults approximate the old 3:1:2 flex ratio.
+  double _nameWidthFraction = 0.50;
+  double _sizeWidthFraction = 0.17;
+
+  static const double _minColumnFraction = 0.10;
+  static const double _splitterWidth = 8.0;
+  static const double _splitterLineWidth = 1.0;
+
   int? _lastTappedIndex;
   DateTime? _lastTapTime;
   static const _doubleTapDelay = Duration(milliseconds: 300);
@@ -180,6 +189,34 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     );
   }
 
+  Widget _buildSplitter({
+    required FimaTheme fimaTheme,
+    required double height,
+    required void Function(double delta, double totalWidth) onDrag,
+    required double totalWidth,
+  }) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragUpdate: (details) {
+          onDrag(details.delta.dx, totalWidth);
+        },
+        child: SizedBox(
+          width: _splitterWidth,
+          height: height,
+          child: Center(
+            child: Container(
+              width: _splitterLineWidth,
+              height: height,
+              color: fimaTheme.borderColor,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildFileIcon(FileSystemItem item, double size) {
     if (item.isParentDetails) {
       return FaIcon(FontAwesomeIcons.turnUp, size: size);
@@ -306,40 +343,87 @@ class _FilePanelState extends ConsumerState<FilePanel> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 color: fimaTheme.surfaceColor,
-                child: Row(
-                  children: [
-                    const SizedBox(width: 24), // Icon space
-                    Expanded(
-                      flex: 3,
-                      child: _buildColumnHeader(
-                        'Name',
-                        SortColumn.name,
-                        panelState,
-                        fimaTheme,
-                        () => controller.sort(SortColumn.name),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 1,
-                      child: _buildColumnHeader(
-                        'Size',
-                        SortColumn.size,
-                        panelState,
-                        fimaTheme,
-                        () => controller.sort(SortColumn.size),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: _buildColumnHeader(
-                        'Modified',
-                        SortColumn.modified,
-                        panelState,
-                        fimaTheme,
-                        () => controller.sort(SortColumn.modified),
-                      ),
-                    ),
-                  ],
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final iconWidth = fontSize + 10;
+                    final availableWidth =
+                        constraints.maxWidth - iconWidth - _splitterWidth * 2;
+                    final sizeWidth = availableWidth * _sizeWidthFraction;
+                    final modifiedWidth =
+                        availableWidth *
+                        (1.0 - _nameWidthFraction - _sizeWidthFraction);
+
+                    return Row(
+                      children: [
+                        SizedBox(width: iconWidth), // Icon space
+                        Expanded(
+                          child: _buildColumnHeader(
+                            'Name',
+                            SortColumn.name,
+                            panelState,
+                            fimaTheme,
+                            () => controller.sort(SortColumn.name),
+                          ),
+                        ),
+                        _buildSplitter(
+                          fimaTheme: fimaTheme,
+                          height: 32,
+                          totalWidth: availableWidth,
+                          onDrag: (delta, total) {
+                            setState(() {
+                              final deltaFraction = delta / total;
+                              final newName =
+                                  (_nameWidthFraction + deltaFraction).clamp(
+                                    _minColumnFraction,
+                                    1.0 -
+                                        _sizeWidthFraction -
+                                        _minColumnFraction,
+                                  );
+                              _nameWidthFraction = newName;
+                            });
+                          },
+                        ),
+                        SizedBox(
+                          width: sizeWidth,
+                          child: _buildColumnHeader(
+                            'Size',
+                            SortColumn.size,
+                            panelState,
+                            fimaTheme,
+                            () => controller.sort(SortColumn.size),
+                          ),
+                        ),
+                        _buildSplitter(
+                          fimaTheme: fimaTheme,
+                          height: 32,
+                          totalWidth: availableWidth,
+                          onDrag: (delta, total) {
+                            setState(() {
+                              final deltaFraction = delta / total;
+                              final newSize =
+                                  (_sizeWidthFraction + deltaFraction).clamp(
+                                    _minColumnFraction,
+                                    1.0 -
+                                        _nameWidthFraction -
+                                        _minColumnFraction,
+                                  );
+                              _sizeWidthFraction = newSize;
+                            });
+                          },
+                        ),
+                        SizedBox(
+                          width: modifiedWidth,
+                          child: _buildColumnHeader(
+                            'Modified',
+                            SortColumn.modified,
+                            panelState,
+                            fimaTheme,
+                            () => controller.sort(SortColumn.modified),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
               // File list
@@ -399,68 +483,88 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                             horizontal: 8,
                             vertical: 4,
                           ),
-                          child: Row(
-                            children: [
-                              SizedBox(
-                                width: fontSize + 10,
-                                child: _buildFileIcon(item, fontSize + 2),
-                              ),
-                              Expanded(
-                                flex: 3,
-                                child: item.path == panelState.editingPath
-                                    ? RenameField(
-                                        initialValue: item.name,
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                              color: textColor,
-                                              fontSize: fontSize,
-                                            ),
-                                        onSubmitted: (newName) {
-                                          controller.renameItem(newName);
-                                        },
-                                        onCancel: () {
-                                          controller.cancelRenaming();
-                                        },
-                                      )
-                                    : Text(
-                                        item.name,
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                              color: textColor,
-                                              fontSize: fontSize,
-                                            ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                              ),
-                              Expanded(
-                                flex: 1,
-                                child: Text(
-                                  item.isDirectory && !item.isParentDetails
-                                      ? '<DIR>'
-                                      : item.isParentDetails
-                                      ? ''
-                                      : _formatSize(item.size),
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: textColor,
-                                    fontSize: fontSize,
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final iconWidth = fontSize + 10;
+                              final availableWidth =
+                                  constraints.maxWidth -
+                                  iconWidth -
+                                  _splitterWidth * 2;
+                              final sizeWidth =
+                                  availableWidth * _sizeWidthFraction;
+                              final modifiedWidth =
+                                  availableWidth *
+                                  (1.0 -
+                                      _nameWidthFraction -
+                                      _sizeWidthFraction);
+
+                              return Row(
+                                children: [
+                                  SizedBox(
+                                    width: iconWidth,
+                                    child: _buildFileIcon(item, fontSize + 2),
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              Expanded(
-                                flex: 2,
-                                child: Text(
-                                  item.isParentDetails
-                                      ? ''
-                                      : _dateFormat.format(item.modified),
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: textColor,
-                                    fontSize: fontSize,
+                                  Expanded(
+                                    child: item.path == panelState.editingPath
+                                        ? RenameField(
+                                            initialValue: item.name,
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: textColor,
+                                                  fontSize: fontSize,
+                                                ),
+                                            onSubmitted: (newName) {
+                                              controller.renameItem(newName);
+                                            },
+                                            onCancel: () {
+                                              controller.cancelRenaming();
+                                            },
+                                          )
+                                        : Text(
+                                            item.name,
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: textColor,
+                                                  fontSize: fontSize,
+                                                ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
+                                  SizedBox(width: _splitterWidth),
+                                  SizedBox(
+                                    width: sizeWidth,
+                                    child: Text(
+                                      item.isDirectory && !item.isParentDetails
+                                          ? '<DIR>'
+                                          : item.isParentDetails
+                                          ? ''
+                                          : _formatSize(item.size),
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: textColor,
+                                            fontSize: fontSize,
+                                          ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  SizedBox(width: _splitterWidth),
+                                  SizedBox(
+                                    width: modifiedWidth,
+                                    child: Text(
+                                      item.isParentDetails
+                                          ? ''
+                                          : _dateFormat.format(item.modified),
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: textColor,
+                                            fontSize: fontSize,
+                                          ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
                         ),
                       );
