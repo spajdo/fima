@@ -54,8 +54,10 @@ class KeyboardHandler extends ConsumerWidget {
         }
 
         // Check for custom keyboard shortcuts
+        // Skip if QuickFilter is active (let quick filter handling take priority)
         final currentShortcut = _buildCurrentShortcut(event);
-        if (currentShortcut.isNotEmpty) {
+        if (currentShortcut.isNotEmpty &&
+            currentPanelState.quickFilterText.isEmpty) {
           final actionId = ref
               .read(userSettingsProvider.notifier)
               .findActionByShortcut(currentShortcut);
