@@ -76,8 +76,26 @@ class KeyboardHandler extends ConsumerWidget {
           panelController.enterFocusedItem();
           return KeyEventResult.handled;
         }
-        if (event.logicalKey == LogicalKeyboardKey.backspace) {
-          panelController.navigateToParent();
+        if (event.logicalKey == LogicalKeyboardKey.backspace &&
+            HardwareKeyboard.instance.isControlPressed) {
+          if (currentPanelState.quickFilterText.isNotEmpty) {
+            panelController.clearQuickFilter();
+            return KeyEventResult.handled;
+          }
+        }
+        if (event.logicalKey == LogicalKeyboardKey.backspace &&
+            !HardwareKeyboard.instance.isShiftPressed) {
+          final filterText = currentPanelState.quickFilterText;
+          if (filterText.isNotEmpty) {
+            final newText = filterText.substring(0, filterText.length - 1);
+            if (newText.isEmpty) {
+              panelController.clearQuickFilter();
+            } else {
+              panelController.setQuickFilter(newText);
+            }
+          } else {
+            panelController.navigateToParent();
+          }
           return KeyEventResult.handled;
         }
 
@@ -325,6 +343,31 @@ class KeyboardHandler extends ConsumerWidget {
           );
 
           return KeyEventResult.handled;
+        }
+
+        // Escape - close QuickFilter if active
+        if (event.logicalKey == LogicalKeyboardKey.escape) {
+          if (currentPanelState.quickFilterText.isNotEmpty) {
+            panelController.clearQuickFilter();
+            return KeyEventResult.handled;
+          }
+        }
+
+        // QuickFilter: plain printable character keys (no Ctrl/Alt/Meta)
+        if (!HardwareKeyboard.instance.isControlPressed &&
+            !HardwareKeyboard.instance.isMetaPressed &&
+            !HardwareKeyboard.instance.isAltPressed) {
+          final character = event.character;
+          if (character != null &&
+              character.length == 1 &&
+              !character.contains('\n') &&
+              !character.contains('\r') &&
+              !character.contains('\t') &&
+              character.codeUnitAt(0) >= 32) {
+            final newText = currentPanelState.quickFilterText + character;
+            panelController.setQuickFilter(newText);
+            return KeyEventResult.handled;
+          }
         }
 
         return KeyEventResult.ignored;

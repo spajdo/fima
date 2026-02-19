@@ -5,16 +5,10 @@ enum ActivePanel { left, right }
 class FocusState {
   final ActivePanel activePanel;
 
-  const FocusState({
-    this.activePanel = ActivePanel.left,
-  });
+  const FocusState({this.activePanel = ActivePanel.left});
 
-  FocusState copyWith({
-    ActivePanel? activePanel,
-  }) {
-    return FocusState(
-      activePanel: activePanel ?? this.activePanel,
-    );
+  FocusState copyWith({ActivePanel? activePanel}) {
+    return FocusState(activePanel: activePanel ?? this.activePanel);
   }
 }
 

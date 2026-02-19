@@ -32,17 +32,17 @@ class _RenameFieldState extends State<RenameField> {
 
     // Select filename without extension
     WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_focusNode.hasFocus) {
-          _focusNode.requestFocus();
-        }
-        final name = widget.initialValue;
-        final extension = p.extension(name);
-        final selectionEnd = name.length - extension.length;
-        
-        _controller.selection = TextSelection(
-          baseOffset: 0,
-          extentOffset: selectionEnd > 0 ? selectionEnd : name.length,
-        );
+      if (!_focusNode.hasFocus) {
+        _focusNode.requestFocus();
+      }
+      final name = widget.initialValue;
+      final extension = p.extension(name);
+      final selectionEnd = name.length - extension.length;
+
+      _controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: selectionEnd > 0 ? selectionEnd : name.length,
+      );
     });
   }
 

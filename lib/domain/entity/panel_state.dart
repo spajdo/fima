@@ -11,6 +11,7 @@ class PanelState {
   final int focusedIndex;
   final String? editingPath;
   final List<String> visitedPaths;
+  final String quickFilterText;
 
   const PanelState({
     this.currentPath = '',
@@ -21,6 +22,7 @@ class PanelState {
     this.focusedIndex = -1,
     this.editingPath,
     this.visitedPaths = const [],
+    this.quickFilterText = '',
   });
 
   PanelState copyWith({
@@ -32,6 +34,7 @@ class PanelState {
     int? focusedIndex,
     String? editingPath,
     List<String>? visitedPaths,
+    String? quickFilterText,
   }) {
     return PanelState(
       currentPath: currentPath ?? this.currentPath,
@@ -42,6 +45,7 @@ class PanelState {
       focusedIndex: focusedIndex ?? this.focusedIndex,
       editingPath: editingPath ?? this.editingPath,
       visitedPaths: visitedPaths ?? this.visitedPaths,
+      quickFilterText: quickFilterText ?? this.quickFilterText,
     );
   }
 
@@ -55,6 +59,7 @@ class PanelState {
       focusedIndex: focusedIndex,
       editingPath: null,
       visitedPaths: visitedPaths,
+      quickFilterText: quickFilterText,
     );
   }
 }

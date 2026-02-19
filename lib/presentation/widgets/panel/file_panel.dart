@@ -572,6 +572,37 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                   ),
                 ),
               ),
+              // QuickFilter input box
+              if (panelState.quickFilterText.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: fimaTheme.surfaceColor,
+                    border: Border(
+                      top: BorderSide(color: fimaTheme.borderColor),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.search,
+                        size: fontSize + 2,
+                        color: fimaTheme.accentColor,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        panelState.quickFilterText,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: fontSize,
+                          color: fimaTheme.textColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),

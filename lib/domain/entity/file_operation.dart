@@ -22,7 +22,7 @@ class OperationStatus {
     }
     return 0.0;
   }
-  
+
   OperationStatus copyWith({
     int? totalBytes,
     int? processedBytes,

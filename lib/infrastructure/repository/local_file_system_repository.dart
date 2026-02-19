@@ -207,7 +207,7 @@ class LocalFileSystemRepository implements FileSystemRepository {
         processedBytes = status.processedBytes;
         processedItems = status.processedItems;
       }
-      
+
       // Update totals for next iteration if needed
       // (processedBytes and processedItems are updated via stream yield)
     }
@@ -249,7 +249,7 @@ class LocalFileSystemRepository implements FileSystemRepository {
       if (renameSuccess) {
         processedItems++;
         yield OperationStatus(
-          totalBytes: 0, 
+          totalBytes: 0,
           processedBytes: 0,
           totalItems: totalItems,
           processedItems: processedItems,
@@ -261,7 +261,7 @@ class LocalFileSystemRepository implements FileSystemRepository {
         final copyTotalItems = stats.$1;
         final copyTotalBytes = stats.$2;
 
-         await for (final status in _recursiveCopy(
+        await for (final status in _recursiveCopy(
           sourcePath,
           destPath,
           token,
@@ -270,14 +270,12 @@ class LocalFileSystemRepository implements FileSystemRepository {
           0,
           0,
         )) {
-            yield status.copyWith(
-                currentItem: 'Moving ${status.currentItem}'
-            );
+          yield status.copyWith(currentItem: 'Moving ${status.currentItem}');
         }
-        
+
         if (!token.isCancelled) {
-             await deleteItem(sourcePath);
-             processedItems++;
+          await deleteItem(sourcePath);
+          processedItems++;
         }
       }
     }
@@ -289,21 +287,23 @@ class LocalFileSystemRepository implements FileSystemRepository {
     int items = 0;
     int bytes = 0;
     final type = await FileSystemEntity.type(path);
-    
+
     if (type == FileSystemEntityType.file) {
       items = 1;
       bytes = (await File(path).stat()).size;
     } else if (type == FileSystemEntityType.directory) {
       items = 1; // Directory itself
       try {
-        await for (final entity in Directory(path).list(recursive: true, followLinks: false)) {
-            items++;
-            if (entity is File) {
-                bytes += (await entity.stat()).size;
-            }
+        await for (final entity in Directory(
+          path,
+        ).list(recursive: true, followLinks: false)) {
+          items++;
+          if (entity is File) {
+            bytes += (await entity.stat()).size;
+          }
         }
       } catch (e) {
-          // Ignore access errors
+        // Ignore access errors
       }
     }
     return (items, bytes);
@@ -318,14 +318,55 @@ class LocalFileSystemRepository implements FileSystemRepository {
     int initialProcessedBytes,
     int initialProcessedItems,
   ) async* {
-      int processedBytes = initialProcessedBytes;
-      int processedItems = initialProcessedItems;
-      
-      final type = await FileSystemEntity.type(sourceStr);
-      
-      if (type == FileSystemEntityType.directory) {
-          await Directory(destStr).create(recursive: true);
-          processedItems++;
+    int processedBytes = initialProcessedBytes;
+    int processedItems = initialProcessedItems;
+
+    final type = await FileSystemEntity.type(sourceStr);
+
+    if (type == FileSystemEntityType.directory) {
+      await Directory(destStr).create(recursive: true);
+      processedItems++;
+      yield OperationStatus(
+        totalBytes: totalBytes,
+        processedBytes: processedBytes,
+        totalItems: totalItems,
+        processedItems: processedItems,
+        currentItem: p.basename(sourceStr),
+      );
+
+      await for (final entity in Directory(sourceStr).list(recursive: false)) {
+        if (token.isCancelled) return;
+        final newDest = p.join(destStr, p.basename(entity.path));
+        await for (final status in _recursiveCopy(
+          entity.path,
+          newDest,
+          token,
+          totalBytes,
+          totalItems,
+          processedBytes,
+          processedItems,
+        )) {
+          yield status;
+          processedBytes = status.processedBytes;
+          processedItems = status.processedItems;
+        }
+      }
+    } else if (type == FileSystemEntityType.file) {
+      final file = File(sourceStr);
+      // Create streams
+      final inputStream = file.openRead();
+      final outputSink = File(destStr).openWrite();
+
+      try {
+        await for (final chunk in inputStream) {
+          if (token.isCancelled) {
+            await outputSink.close();
+            await File(destStr).delete(); // Cleanup partial
+            return;
+          }
+          outputSink.add(chunk);
+          processedBytes += chunk.length;
+
           yield OperationStatus(
             totalBytes: totalBytes,
             processedBytes: processedBytes,
@@ -333,63 +374,22 @@ class LocalFileSystemRepository implements FileSystemRepository {
             processedItems: processedItems,
             currentItem: p.basename(sourceStr),
           );
-
-          await for (final entity in Directory(sourceStr).list(recursive: false)) {
-              if (token.isCancelled) return;
-              final newDest = p.join(destStr, p.basename(entity.path));
-              await for (final status in _recursiveCopy(
-                  entity.path, 
-                  newDest, 
-                  token, 
-                  totalBytes, 
-                  totalItems, 
-                  processedBytes, 
-                  processedItems
-              )) {
-                  yield status;
-                  processedBytes = status.processedBytes;
-                  processedItems = status.processedItems;
-              }
-          }
-      } else if (type == FileSystemEntityType.file) {
-          final file = File(sourceStr);
-          // Create streams
-          final inputStream = file.openRead();
-          final outputSink = File(destStr).openWrite();
-          
-          try {
-             await for (final chunk in inputStream) {
-                 if (token.isCancelled) {
-                     await outputSink.close();
-                     await File(destStr).delete(); // Cleanup partial
-                     return;
-                 }
-                 outputSink.add(chunk);
-                 processedBytes += chunk.length;
-                 
-                  yield OperationStatus(
-                    totalBytes: totalBytes,
-                    processedBytes: processedBytes,
-                    totalItems: totalItems,
-                    processedItems: processedItems,
-                    currentItem: p.basename(sourceStr),
-                  );
-             }
-             await outputSink.flush();
-             await outputSink.close();
-             processedItems++;
-             yield OperationStatus(
-                    totalBytes: totalBytes,
-                    processedBytes: processedBytes,
-                    totalItems: totalItems,
-                    processedItems: processedItems,
-                    currentItem: p.basename(sourceStr),
-             );
-          } catch(e) {
-              await outputSink.close();
-              rethrow;
-          }
+        }
+        await outputSink.flush();
+        await outputSink.close();
+        processedItems++;
+        yield OperationStatus(
+          totalBytes: totalBytes,
+          processedBytes: processedBytes,
+          totalItems: totalItems,
+          processedItems: processedItems,
+          currentItem: p.basename(sourceStr),
+        );
+      } catch (e) {
+        await outputSink.close();
+        rethrow;
       }
+    }
   }
 
   @override
@@ -447,7 +447,8 @@ class LocalFileSystemRepository implements FileSystemRepository {
         '${now.minute.toString().padLeft(2, '0')}:'
         '${now.second.toString().padLeft(2, '0')}';
 
-    final infoContent = '''[Trash Info]
+    final infoContent =
+        '''[Trash Info]
 Path=$path
 DeletionDate=$formattedDate
 ''';

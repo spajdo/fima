@@ -31,6 +31,7 @@ class PanelController extends StateNotifier<PanelState> {
   final FileSystemRepository _repository;
   final Ref _ref;
   final String _panelId;
+  List<FileSystemItem> _allItems = [];
 
   PanelController(this._repository, this._ref, this._panelId)
     : super(const PanelState());
@@ -93,7 +94,10 @@ class PanelController extends StateNotifier<PanelState> {
         selectedItems: preserveSelection ? selectedItemsToUse : {},
         focusedIndex: newFocusedIndex,
         visitedPaths: newVisitedPaths,
+        quickFilterText: '',
       );
+
+      _allItems = sortedItems;
 
       _savePath(path);
 
@@ -195,6 +199,62 @@ class PanelController extends StateNotifier<PanelState> {
       sortColumn: column,
       sortAscending: ascending,
       items: sortedItems,
+    );
+
+    // Update _allItems with the new sort order
+    if (state.quickFilterText.isEmpty) {
+      _allItems = sortedItems;
+    } else {
+      _allItems = _sortItems(_allItems, column, ascending);
+      // Re-apply the filter
+      setQuickFilter(state.quickFilterText);
+    }
+  }
+
+  void setQuickFilter(String text) {
+    final lowerText = text.toLowerCase();
+    final filtered = _allItems.where((item) {
+      if (item.isParentDetails) return true;
+      return item.name.toLowerCase().startsWith(lowerText);
+    }).toList();
+
+    // Find best match: exact match first, then shortest name
+    int bestIndex = -1;
+    int bestLength = -1;
+    for (int i = 0; i < filtered.length; i++) {
+      final item = filtered[i];
+      if (item.isParentDetails) continue;
+      final lowerName = item.name.toLowerCase();
+      if (lowerName == lowerText) {
+        bestIndex = i;
+        break;
+      }
+      if (bestIndex == -1 || item.name.length < bestLength) {
+        bestIndex = i;
+        bestLength = item.name.length;
+      }
+    }
+
+    state = state.copyWith(
+      quickFilterText: text,
+      items: filtered,
+      focusedIndex: bestIndex >= 0 ? bestIndex : (filtered.isNotEmpty ? 0 : -1),
+    );
+  }
+
+  void clearQuickFilter() {
+    // Preserve the currently focused item
+    int newIndex = 0;
+    if (state.focusedIndex >= 0 && state.focusedIndex < state.items.length) {
+      final focusedPath = state.items[state.focusedIndex].path;
+      final idx = _allItems.indexWhere((item) => item.path == focusedPath);
+      if (idx >= 0) newIndex = idx;
+    }
+
+    state = state.copyWith(
+      quickFilterText: '',
+      items: _allItems,
+      focusedIndex: newIndex,
     );
   }
 

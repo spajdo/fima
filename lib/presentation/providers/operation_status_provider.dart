@@ -57,7 +57,7 @@ class OperationController extends StateNotifier<OperationState> {
 
     final focusState = _ref.read(focusProvider);
     final activePanel = focusState.activePanel;
-    
+
     // Determine source and destination
     // Source is active panel
     // Destination is the inactive panel
@@ -71,15 +71,15 @@ class OperationController extends StateNotifier<OperationState> {
     // If no selection, use focused item (if valid)
     final sourceState = _ref.read(panelStateProvider(sourceId));
     List<String> sourcePaths = sourceState.selectedItems.toList();
-    
+
     if (sourcePaths.isEmpty) {
-        if (sourceState.focusedIndex >= 0 && 
-            sourceState.focusedIndex < sourceState.items.length) {
-            final item = sourceState.items[sourceState.focusedIndex];
-            if (!item.isParentDetails) {
-                sourcePaths.add(item.path);
-            }
+      if (sourceState.focusedIndex >= 0 &&
+          sourceState.focusedIndex < sourceState.items.length) {
+        final item = sourceState.items[sourceState.focusedIndex];
+        if (!item.isParentDetails) {
+          sourcePaths.add(item.path);
         }
+      }
     }
 
     if (sourcePaths.isEmpty) return; // Nothing to operate on
@@ -125,5 +125,5 @@ class OperationController extends StateNotifier<OperationState> {
 
 final operationStatusProvider =
     StateNotifierProvider<OperationController, OperationState>((ref) {
-  return OperationController(ref);
-});
+      return OperationController(ref);
+    });

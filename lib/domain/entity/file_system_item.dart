@@ -29,6 +29,13 @@ class FileSystemItem {
 
   @override
   int get hashCode {
-    return Object.hash(path, name, size, modified, isDirectory, isParentDetails);
+    return Object.hash(
+      path,
+      name,
+      size,
+      modified,
+      isDirectory,
+      isParentDetails,
+    );
   }
 }

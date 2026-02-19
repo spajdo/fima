@@ -36,7 +36,7 @@ class _PathEditorDialogState extends State<PathEditorDialog> {
 
   Future<void> _validateAndNavigate() async {
     final path = _controller.text.trim();
-    
+
     if (path.isEmpty) {
       setState(() {
         _errorMessage = 'Path cannot be empty';
@@ -52,11 +52,11 @@ class _PathEditorDialogState extends State<PathEditorDialog> {
     try {
       // Normalize the path
       final normalizedPath = p.normalize(path);
-      
+
       // Check if directory exists
       final dir = Directory(normalizedPath);
       final exists = await dir.exists();
-      
+
       if (!exists) {
         setState(() {
           _errorMessage = 'Directory does not exist';
@@ -118,7 +118,7 @@ class _PathEditorDialogState extends State<PathEditorDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return BaseDialog(
       width: 500,
       title: const Text('Go to Path'),
@@ -134,7 +134,9 @@ class _PathEditorDialogState extends State<PathEditorDialog> {
               hintText: '/path/to/directory',
               errorText: _errorMessage,
               prefixIcon: const Icon(Icons.folder_open),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8.0),
+              ),
             ),
             onSubmitted: (_) => _validateAndNavigate(),
           ),

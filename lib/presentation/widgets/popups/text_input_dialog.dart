@@ -41,9 +41,7 @@ class _TextInputDialogState extends State<TextInputDialog> {
       content: TextField(
         controller: _controller,
         autofocus: true,
-        decoration: InputDecoration(
-          labelText: widget.label,
-        ),
+        decoration: InputDecoration(labelText: widget.label),
         onSubmitted: (_) => _submit(),
       ),
       actions: [

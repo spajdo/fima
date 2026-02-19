@@ -29,10 +29,7 @@ class BaseDialog extends StatelessWidget {
     );
 
     if (width != null) {
-      dialog = SizedBox(
-        width: width,
-        child: dialog,
-      );
+      dialog = SizedBox(width: width, child: dialog);
     }
 
     return dialog;
