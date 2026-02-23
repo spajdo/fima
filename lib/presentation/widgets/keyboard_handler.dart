@@ -14,21 +14,108 @@ import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart'
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
 import 'package:fima/presentation/widgets/popups/omni_dialog.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class KeyboardHandler extends ConsumerWidget {
+const _keyRepeatInitialDelay = Duration(milliseconds: 150);
+const _keyRepeatInterval = Duration(milliseconds: 50);
+
+class KeyboardHandler extends ConsumerStatefulWidget {
   final Widget child;
 
   const KeyboardHandler({super.key, required this.child});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<KeyboardHandler> createState() => _KeyboardHandlerState();
+}
+
+class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
+  final Map<LogicalKeyboardKey, Timer> _keyRepeatTimers = {};
+
+  void _startKeyRepeat(
+    BuildContext context,
+    WidgetRef ref,
+    LogicalKeyboardKey key,
+  ) {
+    _stopKeyRepeat(key);
+
+    void moveAction() {
+      final focusController = ref.read(focusProvider.notifier);
+      final activePanelId = focusController.getActivePanelId();
+      final panelController = ref.read(
+        panelStateProvider(activePanelId).notifier,
+      );
+
+      if (key == LogicalKeyboardKey.arrowUp) {
+        panelController.moveSelectionUp();
+      } else if (key == LogicalKeyboardKey.arrowDown) {
+        panelController.moveSelectionDown();
+      } else if (key == LogicalKeyboardKey.arrowLeft) {
+        panelController.moveToFirst();
+      } else if (key == LogicalKeyboardKey.arrowRight) {
+        panelController.moveToLast();
+      } else if (key == LogicalKeyboardKey.home) {
+        panelController.moveToFirst();
+      } else if (key == LogicalKeyboardKey.end) {
+        panelController.moveToLast();
+      }
+    }
+
+    moveAction();
+
+    _keyRepeatTimers[key] = Timer(_keyRepeatInitialDelay, () {
+      if (_keyRepeatTimers.containsKey(key)) {
+        moveAction();
+        _keyRepeatTimers[key] = Timer.periodic(_keyRepeatInterval, (_) {
+          if (_keyRepeatTimers.containsKey(key)) {
+            moveAction();
+          }
+        });
+      }
+    });
+  }
+
+  void _stopKeyRepeat(LogicalKeyboardKey key) {
+    _keyRepeatTimers[key]?.cancel();
+    _keyRepeatTimers.remove(key);
+  }
+
+  @override
+  void dispose() {
+    for (final timer in _keyRepeatTimers.values) {
+      timer.cancel();
+    }
+    _keyRepeatTimers.clear();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Focus(
       autofocus: true,
       onKeyEvent: (node, event) {
+        final isNavigationKey =
+            event.logicalKey == LogicalKeyboardKey.arrowUp ||
+            event.logicalKey == LogicalKeyboardKey.arrowDown ||
+            event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+            event.logicalKey == LogicalKeyboardKey.arrowRight ||
+            event.logicalKey == LogicalKeyboardKey.home ||
+            event.logicalKey == LogicalKeyboardKey.end;
+
+        if (event is KeyDownEvent) {
+          if (isNavigationKey) {
+            _startKeyRepeat(context, ref, event.logicalKey);
+          }
+          return KeyEventResult.ignored;
+        }
+
         if (event is KeyUpEvent) {
+          if (isNavigationKey) {
+            _stopKeyRepeat(event.logicalKey);
+          }
           return KeyEventResult.ignored;
         }
 
@@ -75,32 +162,6 @@ class KeyboardHandler extends ConsumerWidget {
               return result;
             }
           }
-        }
-
-        // Navigation keys
-        if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-          panelController.moveSelectionUp();
-          return KeyEventResult.handled;
-        }
-        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-          panelController.moveSelectionDown();
-          return KeyEventResult.handled;
-        }
-        if (event.logicalKey == LogicalKeyboardKey.home) {
-          panelController.moveToFirst();
-          return KeyEventResult.handled;
-        }
-        if (event.logicalKey == LogicalKeyboardKey.end) {
-          panelController.moveToLast();
-          return KeyEventResult.handled;
-        }
-        if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-          panelController.moveToFirst();
-          return KeyEventResult.handled;
-        }
-        if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-          panelController.moveToLast();
-          return KeyEventResult.handled;
         }
 
         // Directory navigation
@@ -404,7 +465,7 @@ class KeyboardHandler extends ConsumerWidget {
 
         return KeyEventResult.ignored;
       },
-      child: child,
+      child: widget.child,
     );
   }
 
