@@ -108,8 +108,9 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         if (event is KeyDownEvent) {
           if (isNavigationKey) {
             _startKeyRepeat(context, ref, event.logicalKey);
+            return KeyEventResult.ignored;
           }
-          return KeyEventResult.ignored;
+          // Continue processing for other keys (Enter, Tab, Backspace, etc.)
         }
 
         if (event is KeyUpEvent) {
