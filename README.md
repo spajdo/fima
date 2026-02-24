@@ -10,6 +10,8 @@ Fima is a modern, two-panel file manager built with Flutter, designed specifical
 - **Two-Panel Layout**: Classic dual-pane interface for efficient file management.
 - **Cross-Platform**: Runs natively on Linux, Windows, and macOS.
 - **Modern UI**: Clean and minimal interface with support for dark and light themes.
+- **Workspaces**: Create dedicated workspaces for different projects and switch between them instantly.
+- **Fully Customizable**: Remap any keyboard shortcut to match your personal workflow.
 
 ## Shortcuts
 
@@ -19,6 +21,7 @@ Maximize your productivity with these essential shortcuts:
 |--------|----------------|-------|
 | **Go to File** | `Ctrl` + `P` | `Cmd` + `P` |
 | **Command Palette** | `Ctrl` + `Shift` + `P` | `Cmd` + `Shift` + `P` |
+| **Workspaces** | `Ctrl` + `W` | `Cmd` + `W` |
 
 ## Getting Started
 
