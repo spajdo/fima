@@ -1,16 +1,33 @@
 # fima
 
-Two panel file manager
+![Fima Screenshot](screenshots/composite-theme.png)
+
+Fima is a modern, two-panel file manager built with Flutter, designed specifically for **programmers** who prefer keyboard-centric workflows. It is a cross-platform desktop application available for Linux, Windows, and macOS.
+
+## Key Features
+
+- **Keyboard First**: Navigate and control the entire application without leaving the keyboard.
+- **Two-Panel Layout**: Classic dual-pane interface for efficient file management.
+- **Cross-Platform**: Runs natively on Linux, Windows, and macOS.
+- **Modern UI**: Clean and minimal interface with support for dark and light themes.
+
+## Shortcuts
+
+Maximize your productivity with these essential shortcuts:
+
+| Action | Windows / Linux | macOS |
+|--------|----------------|-------|
+| **Go to File** | `Ctrl` + `P` | `Cmd` + `P` |
+| **Command Palette** | `Ctrl` + `Shift` + `P` | `Cmd` + `Shift` + `P` |
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+To run the application from source:
 
-A few resources to get you started if this is your first Flutter project:
+```bash
+# Get dependencies
+flutter pub get
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+# Run the app
+flutter run
+```
