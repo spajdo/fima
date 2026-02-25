@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 enum OverlayType { none, settings, terminal }
@@ -5,16 +7,24 @@ enum OverlayType { none, settings, terminal }
 class PanelOverlayState {
   final OverlayType type;
   final bool isLeftPanel;
+  final String? toastMessage;
 
   const PanelOverlayState({
     this.type = OverlayType.none,
     this.isLeftPanel = true,
+    this.toastMessage,
   });
 
-  PanelOverlayState copyWith({OverlayType? type, bool? isLeftPanel}) {
+  PanelOverlayState copyWith({
+    OverlayType? type,
+    bool? isLeftPanel,
+    String? toastMessage,
+    bool clearToast = false,
+  }) {
     return PanelOverlayState(
       type: type ?? this.type,
       isLeftPanel: isLeftPanel ?? this.isLeftPanel,
+      toastMessage: clearToast ? null : (toastMessage ?? this.toastMessage),
     );
   }
 
@@ -36,6 +46,15 @@ class OverlayController extends StateNotifier<PanelOverlayState> {
       type: OverlayType.terminal,
       isLeftPanel: isLeftPanel,
     );
+  }
+
+  void showToast(String message) {
+    state = state.copyWith(toastMessage: message);
+    Future.delayed(const Duration(seconds: 2), () {
+      if (state.toastMessage == message) {
+        state = state.copyWith(clearToast: true);
+      }
+    });
   }
 
   void close() {

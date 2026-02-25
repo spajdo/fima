@@ -218,8 +218,8 @@ class SettingsController extends StateNotifier<UserSettings> {
   /// Find action by shortcut (returns actionId or null)
   String? findActionByShortcut(String shortcut) {
     for (final action in KeyMapActionDefs.all) {
-      final effectiveShortcut = getEffectiveShortcut(action.id);
-      if (effectiveShortcut == shortcut) {
+      final effectiveShortcut = getEffectiveShortcut(action.id) ?? '';
+      if (KeyMapActionDefs.shortcutsMatch(effectiveShortcut, shortcut)) {
         return action.id;
       }
     }
@@ -234,8 +234,8 @@ class SettingsController extends StateNotifier<UserSettings> {
     final conflicts = <String>[];
     for (final action in KeyMapActionDefs.all) {
       if (excludeActionId != null && action.id == excludeActionId) continue;
-      final effectiveShortcut = getEffectiveShortcut(action.id);
-      if (effectiveShortcut == shortcut) {
+      final effectiveShortcut = getEffectiveShortcut(action.id) ?? '';
+      if (KeyMapActionDefs.shortcutsMatch(effectiveShortcut, shortcut)) {
         conflicts.add(action.label);
       }
     }

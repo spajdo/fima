@@ -118,6 +118,8 @@ class _MainScreenState extends ConsumerState<MainScreen> {
                   ),
                 ),
                 const BottomStatusBar(),
+                if (overlayState.toastMessage != null)
+                  _buildToast(overlayState.toastMessage!, fimaTheme),
               ],
             ),
     );
@@ -174,6 +176,20 @@ class _MainScreenState extends ConsumerState<MainScreen> {
       width: panelWidth,
       height: panelHeight,
       child: overlayContent,
+    );
+  }
+
+  Widget _buildToast(String message, dynamic fimaTheme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: fimaTheme.surfaceColor,
+      child: Text(
+        message,
+        style: TextStyle(fontSize: 12, color: fimaTheme.textColor),
+        overflow: TextOverflow.ellipsis,
+        maxLines: 1,
+      ),
     );
   }
 }

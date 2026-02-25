@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:fima/domain/entity/file_operation.dart';
 import 'package:fima/domain/entity/workspace.dart';
+import 'package:fima/infrastructure/service/keyboard_utils.dart';
 import 'package:fima/infrastructure/service/linux_application_service.dart';
 import 'package:fima/infrastructure/service/system_clipboard_service.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
@@ -144,9 +145,28 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
           return KeyEventResult.ignored;
         }
 
+        // Handle Backspace for quick filter
+        if (event.logicalKey == LogicalKeyboardKey.backspace) {
+          if (HardwareKeyboard.instance.isControlPressed) {
+            if (currentPanelState.quickFilterText.isNotEmpty) {
+              panelController.clearQuickFilter();
+              return KeyEventResult.handled;
+            }
+          } else if (currentPanelState.quickFilterText.isNotEmpty) {
+            final filterText = currentPanelState.quickFilterText;
+            final newText = filterText.substring(0, filterText.length - 1);
+            if (newText.isEmpty) {
+              panelController.clearQuickFilter();
+            } else {
+              panelController.setQuickFilter(newText);
+            }
+            return KeyEventResult.handled;
+          }
+        }
+
         // Check for custom keyboard shortcuts
         // Skip if QuickFilter is active (let quick filter handling take priority)
-        final currentShortcut = _buildCurrentShortcut(event);
+        final currentShortcut = KeyboardUtils.buildShortcutString(event);
         if (currentShortcut.isNotEmpty &&
             currentPanelState.quickFilterText.isEmpty) {
           final actionId = ref
@@ -165,288 +185,6 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
             if (result != null) {
               return result;
             }
-          }
-        }
-
-        // Directory navigation
-        if (event.logicalKey == LogicalKeyboardKey.enter) {
-          panelController.enterFocusedItem();
-          return KeyEventResult.handled;
-        }
-        if (event.logicalKey == LogicalKeyboardKey.backspace &&
-            HardwareKeyboard.instance.isControlPressed) {
-          if (currentPanelState.quickFilterText.isNotEmpty) {
-            panelController.clearQuickFilter();
-            return KeyEventResult.handled;
-          }
-        }
-        if (event.logicalKey == LogicalKeyboardKey.backspace &&
-            !HardwareKeyboard.instance.isShiftPressed) {
-          final filterText = currentPanelState.quickFilterText;
-          if (filterText.isNotEmpty) {
-            final newText = filterText.substring(0, filterText.length - 1);
-            if (newText.isEmpty) {
-              panelController.clearQuickFilter();
-            } else {
-              panelController.setQuickFilter(newText);
-            }
-          } else {
-            panelController.navigateToParent();
-          }
-          return KeyEventResult.handled;
-        }
-
-        // Selection
-        if (event.logicalKey == LogicalKeyboardKey.space) {
-          panelController.toggleSelectionAtFocus();
-          return KeyEventResult.handled;
-        }
-
-        // Ctrl+A - Select all
-        if (event.logicalKey == LogicalKeyboardKey.keyA &&
-            (HardwareKeyboard.instance.isControlPressed ||
-                HardwareKeyboard.instance.isMetaPressed)) {
-          panelController.selectAll();
-          return KeyEventResult.handled;
-        }
-
-        // Ctrl+D - Deselect all
-        if (event.logicalKey == LogicalKeyboardKey.keyD &&
-            (HardwareKeyboard.instance.isControlPressed ||
-                HardwareKeyboard.instance.isMetaPressed)) {
-          panelController.deselectAll();
-          return KeyEventResult.handled;
-        }
-
-        // Ctrl+C - Copy to system clipboard
-        if (event.logicalKey == LogicalKeyboardKey.keyC &&
-            (HardwareKeyboard.instance.isControlPressed ||
-                HardwareKeyboard.instance.isMetaPressed) &&
-            !HardwareKeyboard.instance.isShiftPressed) {
-          _copyToClipboard(ref, activePanelId, ClipboardOperation.copy);
-          return KeyEventResult.handled;
-        }
-
-        // Ctrl+X - Cut to system clipboard
-        if (event.logicalKey == LogicalKeyboardKey.keyX &&
-            (HardwareKeyboard.instance.isControlPressed ||
-                HardwareKeyboard.instance.isMetaPressed)) {
-          _copyToClipboard(ref, activePanelId, ClipboardOperation.cut);
-          return KeyEventResult.handled;
-        }
-
-        // Ctrl+V - Paste from system clipboard
-        if (event.logicalKey == LogicalKeyboardKey.keyV &&
-            (HardwareKeyboard.instance.isControlPressed ||
-                HardwareKeyboard.instance.isMetaPressed)) {
-          _pasteFromClipboard(ref, activePanelId);
-          return KeyEventResult.handled;
-        }
-
-        // Tab - Switch panel
-        if (event.logicalKey == LogicalKeyboardKey.tab) {
-          focusController.switchPanel();
-          return KeyEventResult.handled;
-        }
-
-        if (event.logicalKey == LogicalKeyboardKey.keyH &&
-            (HardwareKeyboard.instance.isControlPressed ||
-                HardwareKeyboard.instance.isMetaPressed)) {
-          ref.read(userSettingsProvider.notifier).toggleShowHiddenFiles();
-          return KeyEventResult.handled;
-        }
-
-        // Delete
-        if (event.logicalKey == LogicalKeyboardKey.delete) {
-          final isShiftPressed = HardwareKeyboard.instance.isShiftPressed;
-          final panelState = ref.read(panelStateProvider(activePanelId));
-
-          if (isShiftPressed) {
-            // Permanent delete - show dialog
-            // We need count of items to be deleted.
-            // If selection is empty, it's 1 (focused item), unless focused item is .. or empty
-            int count = panelState.selectedItems.length;
-            if (count == 0 &&
-                panelState.focusedIndex >= 0 &&
-                panelState.focusedIndex < panelState.items.length &&
-                !panelState.items[panelState.focusedIndex].isParentDetails) {
-              count = 1;
-            }
-
-            if (count > 0) {
-              showDialog(
-                context: context,
-                barrierColor: Colors.transparent,
-                builder: (context) => DeleteConfirmationDialog(count: count),
-              ).then((confirmed) {
-                if (confirmed == true) {
-                  panelController.deleteSelectedItems(permanent: true);
-                }
-              });
-            }
-          } else {
-            // Move to trash - no confirmation
-            panelController.deleteSelectedItems(permanent: false);
-          }
-          return KeyEventResult.handled;
-        }
-
-        // F5 - Copy
-        if (event.logicalKey == LogicalKeyboardKey.f5) {
-          ref.read(operationStatusProvider.notifier).startCopy();
-          return KeyEventResult.handled;
-        }
-
-        // F6 - Move
-        if (event.logicalKey == LogicalKeyboardKey.f6) {
-          ref.read(operationStatusProvider.notifier).startMove();
-          return KeyEventResult.handled;
-        }
-        // F2 - Rename
-        if (event.logicalKey == LogicalKeyboardKey.f2) {
-          ref.read(panelStateProvider(activePanelId).notifier).startRenaming();
-          return KeyEventResult.handled;
-        }
-
-        // F7 - Create Directory
-        if (event.logicalKey == LogicalKeyboardKey.f7) {
-          final panelState = ref.read(panelStateProvider(activePanelId));
-          // If panel not ready or path empty, ignore
-          if (panelState.currentPath.isEmpty) return KeyEventResult.ignored;
-
-          showDialog(
-            context: context,
-            barrierColor: Colors.transparent,
-            builder: (context) => const TextInputDialog(
-              title: 'Create Directory',
-              label: 'Directory Name',
-              okButtonLabel: 'Create',
-            ),
-          ).then((name) {
-            if (name != null && name.toString().isNotEmpty) {
-              panelController.createDirectory(name.toString());
-            }
-          });
-          return KeyEventResult.handled;
-        }
-
-        // F8 - Create File
-        if (event.logicalKey == LogicalKeyboardKey.f8) {
-          final panelState = ref.read(panelStateProvider(activePanelId));
-          if (panelState.currentPath.isEmpty) return KeyEventResult.ignored;
-
-          showDialog(
-            context: context,
-            barrierColor: Colors.transparent,
-            builder: (context) => const TextInputDialog(
-              title: 'Create File',
-              label: 'File Name',
-              okButtonLabel: 'Create',
-            ),
-          ).then((name) {
-            if (name != null && name.toString().isNotEmpty) {
-              panelController.createFile(name.toString());
-            }
-          });
-          return KeyEventResult.handled;
-        }
-
-        // F9 - Open Terminal
-        if (event.logicalKey == LogicalKeyboardKey.f9) {
-          final path = ref.read(panelStateProvider(activePanelId)).currentPath;
-          if (path.isNotEmpty) {
-            _openTerminal(path);
-          }
-          return KeyEventResult.handled;
-        }
-
-        // F4 - Open with...
-        if (event.logicalKey == LogicalKeyboardKey.f4) {
-          _openWithApplication(context, ref);
-          return KeyEventResult.handled;
-        }
-
-        // F10 - Open Default File Manager
-        if (event.logicalKey == LogicalKeyboardKey.f10) {
-          final path = ref.read(panelStateProvider(activePanelId)).currentPath;
-          if (path.isNotEmpty) {
-            _openFileManager(path);
-          }
-          return KeyEventResult.handled;
-        }
-
-        // Ctrl+Shift+S - Save as Workspace
-        if (event.logicalKey == LogicalKeyboardKey.keyS &&
-            (HardwareKeyboard.instance.isControlPressed ||
-                HardwareKeyboard.instance.isMetaPressed) &&
-            HardwareKeyboard.instance.isShiftPressed) {
-          final leftState = ref.read(panelStateProvider('left'));
-          final rightState = ref.read(panelStateProvider('right'));
-
-          showDialog(
-            context: context,
-            barrierColor: Colors.transparent,
-            builder: (context) => const TextInputDialog(
-              title: 'Save Workspace',
-              label: 'Workspace Name',
-              okButtonLabel: 'Save',
-            ),
-          ).then((name) {
-            if (name != null && name.toString().isNotEmpty) {
-              final workspace = Workspace(
-                name: name.toString(),
-                leftPanelPath: leftState.currentPath,
-                rightPanelPath: rightState.currentPath,
-              );
-              ref.read(userSettingsProvider.notifier).addWorkspace(workspace);
-            }
-          });
-          return KeyEventResult.handled;
-        }
-
-        // Ctrl+Alt+S - Settings
-        if (event.logicalKey == LogicalKeyboardKey.keyS &&
-            HardwareKeyboard.instance.isControlPressed &&
-            HardwareKeyboard.instance.isAltPressed) {
-          final focusState = ref.read(focusProvider);
-          final isLeftPanel = focusState.activePanel == ActivePanel.left;
-          ref.read(overlayProvider.notifier).showSettings(isLeftPanel);
-          return KeyEventResult.handled;
-        }
-
-        // Omni Dialog (Ctrl + P or Ctrl + Shift + P)
-        if (event.logicalKey == LogicalKeyboardKey.keyP &&
-            (HardwareKeyboard.instance.isControlPressed ||
-                HardwareKeyboard.instance.isMetaPressed)) {
-          final isShift = HardwareKeyboard.instance.isShiftPressed;
-
-          showDialog(
-            context: context,
-            barrierColor: Colors.transparent,
-            builder: (context) => OmniDialog(initialText: isShift ? '>' : ''),
-          );
-
-          return KeyEventResult.handled;
-        }
-
-        // Workspace Dialog (Ctrl + W)
-        if (event.logicalKey == LogicalKeyboardKey.keyW &&
-            (HardwareKeyboard.instance.isControlPressed ||
-                HardwareKeyboard.instance.isMetaPressed)) {
-          showDialog(
-            context: context,
-            barrierColor: Colors.transparent,
-            builder: (context) => const OmniDialog(initialText: 'w '),
-          );
-
-          return KeyEventResult.handled;
-        }
-
-        // Escape - close QuickFilter if active
-        if (event.logicalKey == LogicalKeyboardKey.escape) {
-          if (currentPanelState.quickFilterText.isNotEmpty) {
-            panelController.clearQuickFilter();
-            return KeyEventResult.handled;
           }
         }
 
@@ -602,6 +340,24 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
       } else {
         ref.read(internalClipboardProvider.notifier).clearCutPaths();
       }
+    }
+  }
+
+  void _copyPathToClipboard(WidgetRef ref, String activePanelId) {
+    final panelState = ref.read(panelStateProvider(activePanelId));
+    String? targetPath;
+
+    if (panelState.focusedIndex >= 0 &&
+        panelState.focusedIndex < panelState.items.length) {
+      final item = panelState.items[panelState.focusedIndex];
+      if (!item.isParentDetails) {
+        targetPath = item.path;
+      }
+    }
+
+    if (targetPath != null && targetPath.isNotEmpty) {
+      Clipboard.setData(ClipboardData(text: targetPath));
+      ref.read(overlayProvider.notifier).showToast('Path copied: $targetPath');
     }
   }
 
@@ -771,113 +527,6 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
     return file.existsSync() || dir.existsSync();
   }
 
-  String _buildCurrentShortcut(KeyEvent event) {
-    final modifiers = <String>[];
-    final key = event.logicalKey;
-
-    if (HardwareKeyboard.instance.isControlPressed ||
-        key == LogicalKeyboardKey.controlLeft ||
-        key == LogicalKeyboardKey.controlRight) {
-      modifiers.add('Ctrl');
-    }
-    if (HardwareKeyboard.instance.isAltPressed ||
-        key == LogicalKeyboardKey.altLeft ||
-        key == LogicalKeyboardKey.altRight) {
-      modifiers.add('Alt');
-    }
-    if (HardwareKeyboard.instance.isShiftPressed ||
-        key == LogicalKeyboardKey.shiftLeft ||
-        key == LogicalKeyboardKey.shiftRight) {
-      modifiers.add('Shift');
-    }
-    if (HardwareKeyboard.instance.isMetaPressed ||
-        key == LogicalKeyboardKey.metaLeft ||
-        key == LogicalKeyboardKey.metaRight) {
-      if (Platform.isMacOS) {
-        modifiers.add('⌘');
-      } else {
-        modifiers.add('Win');
-      }
-    }
-
-    String keyLabel;
-    if (key == LogicalKeyboardKey.arrowUp) {
-      keyLabel = 'Arrow Up';
-    } else if (key == LogicalKeyboardKey.arrowDown) {
-      keyLabel = 'Arrow Down';
-    } else if (key == LogicalKeyboardKey.arrowLeft) {
-      keyLabel = 'Arrow Left';
-    } else if (key == LogicalKeyboardKey.arrowRight) {
-      keyLabel = 'Arrow Right';
-    } else if (key == LogicalKeyboardKey.space) {
-      keyLabel = 'Space';
-    } else if (key == LogicalKeyboardKey.enter) {
-      keyLabel = 'Enter';
-    } else if (key == LogicalKeyboardKey.backspace) {
-      keyLabel = 'Backspace';
-    } else if (key == LogicalKeyboardKey.delete) {
-      keyLabel = 'Delete';
-    } else if (key == LogicalKeyboardKey.escape) {
-      keyLabel = 'Escape';
-    } else if (key == LogicalKeyboardKey.tab) {
-      keyLabel = 'Tab';
-    } else if (key == LogicalKeyboardKey.home) {
-      keyLabel = 'Home';
-    } else if (key == LogicalKeyboardKey.end) {
-      keyLabel = 'End';
-    } else if (key == LogicalKeyboardKey.f1) {
-      keyLabel = 'F1';
-    } else if (key == LogicalKeyboardKey.f2) {
-      keyLabel = 'F2';
-    } else if (key == LogicalKeyboardKey.f3) {
-      keyLabel = 'F3';
-    } else if (key == LogicalKeyboardKey.f4) {
-      keyLabel = 'F4';
-    } else if (key == LogicalKeyboardKey.f5) {
-      keyLabel = 'F5';
-    } else if (key == LogicalKeyboardKey.f6) {
-      keyLabel = 'F6';
-    } else if (key == LogicalKeyboardKey.f7) {
-      keyLabel = 'F7';
-    } else if (key == LogicalKeyboardKey.f8) {
-      keyLabel = 'F8';
-    } else if (key == LogicalKeyboardKey.f9) {
-      keyLabel = 'F9';
-    } else if (key == LogicalKeyboardKey.f10) {
-      keyLabel = 'F10';
-    } else if (key == LogicalKeyboardKey.f11) {
-      keyLabel = 'F11';
-    } else if (key == LogicalKeyboardKey.f12) {
-      keyLabel = 'F12';
-    } else {
-      keyLabel = key.keyLabel.toUpperCase();
-      if (keyLabel.length == 1) {
-        keyLabel = keyLabel;
-      }
-    }
-
-    if (keyLabel.isEmpty) {
-      return '';
-    }
-
-    modifiers.sort((a, b) {
-      final order = Platform.isMacOS
-          ? ['⌃', '⌥', '⇧', '⌘', 'Win']
-          : ['Ctrl', 'Alt', 'Shift', 'Win'];
-      final aIndex = order.indexOf(a);
-      final bIndex = order.indexOf(b);
-      if (aIndex != -1 && bIndex != -1) {
-        return aIndex.compareTo(bIndex);
-      }
-      if (aIndex != -1) return -1;
-      if (bIndex != -1) return 1;
-      return a.compareTo(b);
-    });
-
-    final parts = [...modifiers, keyLabel];
-    return parts.join('+');
-  }
-
   KeyEventResult? _handleCustomShortcut(
     WidgetRef ref,
     BuildContext context,
@@ -987,6 +636,20 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
           builder: (context) => const OmniDialog(initialText: 'w '),
         );
         return KeyEventResult.handled;
+      case 'omniPanelPaths':
+        showDialog(
+          context: context,
+          barrierColor: Colors.transparent,
+          builder: (context) => const OmniDialog(initialText: ''),
+        );
+        return KeyEventResult.handled;
+      case 'omniPanelActions':
+        showDialog(
+          context: context,
+          barrierColor: Colors.transparent,
+          builder: (context) => const OmniDialog(initialText: '>'),
+        );
+        return KeyEventResult.handled;
       case 'clearQuickFilter':
         panelController.clearQuickFilter();
         return KeyEventResult.handled;
@@ -994,6 +657,9 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         if (currentPanelState.quickFilterText.isNotEmpty) {
           panelController.clearQuickFilter();
         }
+        return KeyEventResult.handled;
+      case 'copyPath':
+        _copyPathToClipboard(ref, activePanelId);
         return KeyEventResult.handled;
       default:
         return null;
