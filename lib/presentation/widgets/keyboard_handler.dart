@@ -135,10 +135,13 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
 
         // If overlay is active, handle ESC to close it
         final overlayState = ref.read(overlayProvider);
-        if (overlayState.isActive &&
-            event.logicalKey == LogicalKeyboardKey.escape) {
-          ref.read(overlayProvider.notifier).close();
-          return KeyEventResult.handled;
+        if (overlayState.isActive) {
+          if (event.logicalKey == LogicalKeyboardKey.escape) {
+            ref.read(overlayProvider.notifier).close();
+            return KeyEventResult.handled;
+          }
+          // If overlay is active, ignore other key events so the overlay can handle them
+          return KeyEventResult.ignored;
         }
 
         // Check for custom keyboard shortcuts
