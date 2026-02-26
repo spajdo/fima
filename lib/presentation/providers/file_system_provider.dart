@@ -42,6 +42,25 @@ class PanelController extends StateNotifier<PanelState> {
     : super(const PanelState());
 
   Future<void> init(String? initialPath) async {
+    final settings = _ref.read(userSettingsProvider);
+    final isLeft = _panelId == 'left';
+    final sortColIndex = isLeft
+        ? settings.leftPanelSortColumn
+        : settings.rightPanelSortColumn;
+    final sortAscending = isLeft
+        ? settings.leftPanelSortAscending
+        : settings.rightPanelSortAscending;
+
+    final sortColumn =
+        sortColIndex >= 0 && sortColIndex < SortColumn.values.length
+        ? SortColumn.values[sortColIndex]
+        : SortColumn.name;
+
+    state = state.copyWith(
+      sortColumn: sortColumn,
+      sortAscending: sortAscending,
+    );
+
     final path = initialPath ?? await _repository.getHomeDirectory();
     await loadPath(path, addToVisited: false);
   }
@@ -207,6 +226,17 @@ class PanelController extends StateNotifier<PanelState> {
       sortAscending: ascending,
       items: sortedItems,
     );
+
+    // Persist sort preference to settings
+    if (_panelId == 'left') {
+      _ref
+          .read(userSettingsProvider.notifier)
+          .setLeftPanelSort(column.index, ascending);
+    } else if (_panelId == 'right') {
+      _ref
+          .read(userSettingsProvider.notifier)
+          .setRightPanelSort(column.index, ascending);
+    }
 
     // Update _allItems with the new sort order
     if (state.quickFilterText.isEmpty) {

@@ -45,6 +45,24 @@ class SettingsController extends StateNotifier<UserSettings> {
     save(); // Auto-save
   }
 
+  /// Update left panel sort column
+  void setLeftPanelSort(int column, bool ascending) {
+    state = state.copyWith(
+      leftPanelSortColumn: column,
+      leftPanelSortAscending: ascending,
+    );
+    save(); // Auto-save
+  }
+
+  /// Update right panel sort column
+  void setRightPanelSort(int column, bool ascending) {
+    state = state.copyWith(
+      rightPanelSortColumn: column,
+      rightPanelSortAscending: ascending,
+    );
+    save(); // Auto-save
+  }
+
   /// Update panel split ratio
   void setPanelSplitRatio(double ratio) {
     state = state.copyWith(panelSplitRatio: ratio);

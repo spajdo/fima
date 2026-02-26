@@ -17,6 +17,11 @@ class UserSettings {
   final List<Workspace> workspaces;
   final String themeName;
   final Map<String, String> keyMap;
+  final bool useBuiltInTerminal;
+  final int leftPanelSortColumn;
+  final bool leftPanelSortAscending;
+  final int rightPanelSortColumn;
+  final bool rightPanelSortAscending;
 
   const UserSettings({
     required this.leftPanelPath,
@@ -34,6 +39,11 @@ class UserSettings {
     this.workspaces = const [],
     this.themeName = 'Light',
     this.keyMap = const {},
+    this.useBuiltInTerminal = false,
+    this.leftPanelSortColumn = 0,
+    this.leftPanelSortAscending = true,
+    this.rightPanelSortColumn = 0,
+    this.rightPanelSortAscending = true,
   });
 
   // Default settings
@@ -54,6 +64,11 @@ class UserSettings {
       workspaces: [],
       themeName: 'Light',
       keyMap: {},
+      useBuiltInTerminal: false,
+      leftPanelSortColumn: 0,
+      leftPanelSortAscending: true,
+      rightPanelSortColumn: 0,
+      rightPanelSortAscending: true,
     );
   }
 
@@ -83,6 +98,11 @@ class UserSettings {
             (key, value) => MapEntry(key, value as String),
           ) ??
           {},
+      useBuiltInTerminal: json['useBuiltInTerminal'] as bool? ?? false,
+      leftPanelSortColumn: json['leftPanelSortColumn'] as int? ?? 0,
+      leftPanelSortAscending: json['leftPanelSortAscending'] as bool? ?? true,
+      rightPanelSortColumn: json['rightPanelSortColumn'] as int? ?? 0,
+      rightPanelSortAscending: json['rightPanelSortAscending'] as bool? ?? true,
     );
   }
 
@@ -104,6 +124,11 @@ class UserSettings {
       'workspaces': workspaces.map((e) => e.toJson()).toList(),
       'themeName': themeName,
       'keyMap': keyMap,
+      'useBuiltInTerminal': useBuiltInTerminal,
+      'leftPanelSortColumn': leftPanelSortColumn,
+      'leftPanelSortAscending': leftPanelSortAscending,
+      'rightPanelSortColumn': rightPanelSortColumn,
+      'rightPanelSortAscending': rightPanelSortAscending,
     };
   }
 
@@ -124,6 +149,11 @@ class UserSettings {
     List<Workspace>? workspaces,
     String? themeName,
     Map<String, String>? keyMap,
+    bool? useBuiltInTerminal,
+    int? leftPanelSortColumn,
+    bool? leftPanelSortAscending,
+    int? rightPanelSortColumn,
+    bool? rightPanelSortAscending,
   }) {
     return UserSettings(
       leftPanelPath: leftPanelPath ?? this.leftPanelPath,
@@ -141,6 +171,13 @@ class UserSettings {
       workspaces: workspaces ?? this.workspaces,
       themeName: themeName ?? this.themeName,
       keyMap: keyMap ?? this.keyMap,
+      useBuiltInTerminal: useBuiltInTerminal ?? this.useBuiltInTerminal,
+      leftPanelSortColumn: leftPanelSortColumn ?? this.leftPanelSortColumn,
+      leftPanelSortAscending:
+          leftPanelSortAscending ?? this.leftPanelSortAscending,
+      rightPanelSortColumn: rightPanelSortColumn ?? this.rightPanelSortColumn,
+      rightPanelSortAscending:
+          rightPanelSortAscending ?? this.rightPanelSortAscending,
     );
   }
 }
