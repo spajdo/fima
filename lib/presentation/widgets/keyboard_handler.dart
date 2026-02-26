@@ -138,11 +138,30 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         final overlayState = ref.read(overlayProvider);
         if (overlayState.isActive) {
           if (event.logicalKey == LogicalKeyboardKey.escape) {
+            // Terminal overlay intercepts Escape itself (confirmation dialog).
+            if (overlayState.type == OverlayType.terminal) {
+              return KeyEventResult.ignored;
+            }
             ref.read(overlayProvider.notifier).close();
             return KeyEventResult.handled;
           }
-          // If overlay is active, ignore other key events so the overlay can handle them
-          return KeyEventResult.ignored;
+
+          if (overlayState.type == OverlayType.terminal) {
+            // When terminal is open, only block keys while the terminal's
+            // own panel is active. If the user switched to the opposite
+            // panel we fall through and let the normal key-processing run.
+            final focusState = ref.read(focusProvider);
+            final terminalIsLeft = overlayState.isLeftPanel;
+            final activeIsLeft = focusState.activePanel == ActivePanel.left;
+            if (terminalIsLeft == activeIsLeft) {
+              // Same panel as terminal → let the terminal handle keys.
+              return KeyEventResult.ignored;
+            }
+            // Opposite panel is active → fall through to normal handling.
+          } else {
+            // Non-terminal overlay (settings, etc.) – swallow all keys.
+            return KeyEventResult.ignored;
+          }
         }
 
         // Handle Backspace for quick filter
@@ -434,10 +453,33 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
           .read(focusProvider.notifier)
           .getInactivePanelId();
 
+      // Compute which item to focus in the source panel after the move.
+      // The panel state is still unmodified in Riverpod at this point.
+      final sourcePanelState = ref.read(panelStateProvider(sourcePanelId));
+      String? sourceSelectPath;
+      final remaining = sourcePanelState.items
+          .where((item) => !finalPaths.contains(item.path))
+          .toList();
+      if (remaining.isNotEmpty) {
+        final focusedIdx = sourcePanelState.focusedIndex;
+        if (focusedIdx >= 0 &&
+            focusedIdx < sourcePanelState.items.length &&
+            !finalPaths.contains(sourcePanelState.items[focusedIdx].path)) {
+          // Focused item wasn't moved → keep it.
+          sourceSelectPath = sourcePanelState.items[focusedIdx].path;
+        } else {
+          // Focused item moved → slide to the next item (or last if at end).
+          final targetIdx = focusedIdx.clamp(0, remaining.length - 1);
+          sourceSelectPath = remaining[targetIdx].path;
+        }
+      }
+
       ref
           .read(panelStateProvider(sourcePanelId).notifier)
-          .loadPath(sourcePath!);
-      ref.read(panelStateProvider(activePanelId).notifier).loadPath(destPath);
+          .loadPath(sourcePath!, selectItemPath: sourceSelectPath);
+      ref
+          .read(panelStateProvider(activePanelId).notifier)
+          .loadPath(destPath, preserveFocusedIndex: true);
       return;
     } else {
       // Copy operation
@@ -618,7 +660,14 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
       case 'openTerminal':
         final path = ref.read(panelStateProvider(activePanelId)).currentPath;
         if (path.isNotEmpty) {
-          _openTerminal(path);
+          final useBuiltIn = ref.read(userSettingsProvider).useBuiltInTerminal;
+          if (useBuiltIn) {
+            final focusState = ref.read(focusProvider);
+            final isLeftPanel = focusState.activePanel == ActivePanel.left;
+            ref.read(overlayProvider.notifier).showTerminal(isLeftPanel, path);
+          } else {
+            _openTerminal(path);
+          }
         }
         return KeyEventResult.handled;
       case 'openWith':

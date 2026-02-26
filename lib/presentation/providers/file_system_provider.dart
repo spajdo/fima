@@ -396,7 +396,7 @@ class PanelController extends StateNotifier<PanelState> {
       final newPath = p.join(parent, newName);
       if (newPath != editingPath) {
         await _repository.renameItem(editingPath, newPath);
-        await loadPath(state.currentPath);
+        await loadPath(state.currentPath, selectItemPath: newPath);
       }
     } catch (e) {
       debugPrint('Error renaming item: $e');

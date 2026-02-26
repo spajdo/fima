@@ -109,9 +109,43 @@ class OperationController extends StateNotifier<OperationState> {
       },
       onDone: () async {
         state = const OperationState(); // Reset on completion
-        // Refresh both panels
-        await sourceController.loadPath(sourceState.currentPath);
-        await destController.loadPath(destPath);
+
+        if (isCopy) {
+          // Items still exist in source → preserve by path.
+          await sourceController.loadPath(
+            sourceState.currentPath,
+            preserveFocusedIndex: true,
+          );
+        } else {
+          // Move: items are gone from source. Select the next surviving item,
+          // falling back to the previous one if nothing is below.
+          final remaining = sourceState.items
+              .where((item) => !sourcePaths.contains(item.path))
+              .toList();
+
+          String? sourceSelectPath;
+          if (remaining.isNotEmpty) {
+            final focusedIdx = sourceState.focusedIndex;
+            // If the focused item wasn't moved, just keep it.
+            if (focusedIdx >= 0 &&
+                focusedIdx < sourceState.items.length &&
+                !sourcePaths.contains(sourceState.items[focusedIdx].path)) {
+              sourceSelectPath = sourceState.items[focusedIdx].path;
+            } else {
+              // Focus the item that "slides into" the old position (or last).
+              final targetIdx = focusedIdx.clamp(0, remaining.length - 1);
+              sourceSelectPath = remaining[targetIdx].path;
+            }
+          }
+
+          await sourceController.loadPath(
+            sourceState.currentPath,
+            selectItemPath: sourceSelectPath,
+          );
+        }
+
+        // Destination panel: keep whatever was focused there.
+        await destController.loadPath(destPath, preserveFocusedIndex: true);
       },
     );
   }

@@ -8,11 +8,13 @@ class PanelOverlayState {
   final OverlayType type;
   final bool isLeftPanel;
   final String? toastMessage;
+  final String? terminalPath;
 
   const PanelOverlayState({
     this.type = OverlayType.none,
     this.isLeftPanel = true,
     this.toastMessage,
+    this.terminalPath,
   });
 
   PanelOverlayState copyWith({
@@ -20,11 +22,13 @@ class PanelOverlayState {
     bool? isLeftPanel,
     String? toastMessage,
     bool clearToast = false,
+    String? terminalPath,
   }) {
     return PanelOverlayState(
       type: type ?? this.type,
       isLeftPanel: isLeftPanel ?? this.isLeftPanel,
       toastMessage: clearToast ? null : (toastMessage ?? this.toastMessage),
+      terminalPath: terminalPath ?? this.terminalPath,
     );
   }
 
@@ -41,10 +45,11 @@ class OverlayController extends StateNotifier<PanelOverlayState> {
     );
   }
 
-  void showTerminal(bool isLeftPanel) {
+  void showTerminal(bool isLeftPanel, String path) {
     state = PanelOverlayState(
       type: OverlayType.terminal,
       isLeftPanel: isLeftPanel,
+      terminalPath: path,
     );
   }
 

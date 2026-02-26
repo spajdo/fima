@@ -29,6 +29,11 @@ class FilePanel extends ConsumerStatefulWidget {
 class _FilePanelState extends ConsumerState<FilePanel> {
   final DateFormat _dateFormat = DateFormat('yyyy-MM-dd HH:mm');
   final ScrollController _scrollController = ScrollController();
+  // Explicit Flutter FocusNode for this panel. When the user taps to
+  // activate this panel we call requestFocus() so that Flutter focus
+  // leaves any other focused widget (e.g. the terminal's TerminalView)
+  // and routes key events back to the KeyboardHandler ancestor.
+  late final FocusNode _panelFocusNode;
   bool _previousShowHiddenFiles = false;
 
   // Column width fractions (the third column gets the remainder).
@@ -47,6 +52,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   @override
   void initState() {
     super.initState();
+    _panelFocusNode = FocusNode();
     // Initialize the panel with provided path or default (home)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Only initialize if initialPath is provided and not empty
@@ -64,6 +70,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _panelFocusNode.dispose();
     super.dispose();
   }
 
@@ -89,6 +96,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       _lastTappedIndex = null;
       _lastTapTime = null;
     } else {
+      _panelFocusNode.requestFocus(); // take Flutter focus from terminal
       ref
           .read(focusProvider.notifier)
           .setActivePanel(
@@ -289,6 +297,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
+          _panelFocusNode.requestFocus(); // take Flutter focus from terminal
           ref
               .read(focusProvider.notifier)
               .setActivePanel(
@@ -431,6 +440,8 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () {
+                    _panelFocusNode
+                        .requestFocus(); // take Flutter focus from terminal
                     ref
                         .read(focusProvider.notifier)
                         .setActivePanel(

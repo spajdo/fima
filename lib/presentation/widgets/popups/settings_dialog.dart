@@ -37,6 +37,7 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent>
   List<FimaTheme> _availableThemes = [];
   bool _hasChanges = false;
   bool _themesLoaded = false;
+  late bool _useBuiltInTerminal;
 
   @override
   void initState() {
@@ -47,6 +48,7 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent>
     _showHiddenFiles = settings.showHiddenFiles;
     _maxPathIndexes = settings.maxPathIndexes;
     _selectedThemeName = settings.themeName;
+    _useBuiltInTerminal = settings.useBuiltInTerminal;
     _loadThemes();
   }
 
@@ -100,6 +102,13 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent>
         _hasChanges = true;
       });
     }
+  }
+
+  void _onUseBuiltInTerminalChanged(bool value) {
+    setState(() {
+      _useBuiltInTerminal = value;
+      _hasChanges = true;
+    });
   }
 
   Future<void> _importTheme() async {
@@ -178,6 +187,10 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent>
     controller.setFontSize(_fontSize);
     if (_showHiddenFiles != ref.read(userSettingsProvider).showHiddenFiles) {
       controller.toggleShowHiddenFiles();
+    }
+    if (_useBuiltInTerminal !=
+        ref.read(userSettingsProvider).useBuiltInTerminal) {
+      controller.toggleUseBuiltInTerminal();
     }
     controller.setMaxPathIndexes(_maxPathIndexes);
 
@@ -286,6 +299,10 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent>
           _buildFontSizeControl(theme),
           const SizedBox(height: 16),
           _buildShowHiddenFilesControl(theme),
+          const SizedBox(height: 24),
+          _buildSectionTitle(theme, 'Terminal'),
+          const SizedBox(height: 16),
+          _buildUseBuiltInTerminalControl(theme),
           const SizedBox(height: 24),
           _buildSectionTitle(theme, 'Performance'),
           const SizedBox(height: 16),
@@ -480,6 +497,33 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent>
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUseBuiltInTerminalControl(ThemeData theme) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Use built-in terminal', style: theme.textTheme.bodyLarge),
+              const SizedBox(height: 4),
+              Text(
+                'Open terminal inside the panel instead of the system app',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Switch(
+          value: _useBuiltInTerminal,
+          onChanged: _onUseBuiltInTerminalChanged,
         ),
       ],
     );

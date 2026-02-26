@@ -67,6 +67,12 @@ class SettingsController extends StateNotifier<UserSettings> {
     save(); // Auto-save
   }
 
+  /// Toggle use built-in terminal setting
+  void toggleUseBuiltInTerminal() {
+    state = state.copyWith(useBuiltInTerminal: !state.useBuiltInTerminal);
+    save(); // Auto-save
+  }
+
   /// Update max path indexes
   void setMaxPathIndexes(int count) {
     final newCount = count.clamp(10, 100);

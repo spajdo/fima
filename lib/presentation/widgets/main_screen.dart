@@ -1,8 +1,10 @@
 import 'package:fima/domain/entity/user_settings.dart';
+import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
 import 'package:fima/presentation/widgets/bottom_status_bar.dart';
+import 'package:fima/presentation/widgets/panel/built_in_terminal.dart';
 import 'package:fima/presentation/widgets/panel/file_panel.dart';
 import 'package:fima/presentation/widgets/popups/settings_dialog.dart';
 import 'package:flutter/material.dart';
@@ -131,7 +133,6 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     double totalHeight,
     UserSettings settings,
   ) {
-    final fimaTheme = ref.watch(themeProvider);
     final splitterWidth = 4.0;
     final isLeftPanel = overlayState.isLeftPanel;
 
@@ -157,14 +158,16 @@ class _MainScreenState extends ConsumerState<MainScreen> {
           onClose: () => ref.read(overlayProvider.notifier).close(),
         );
       case OverlayType.terminal:
-        overlayContent = Container(
-          color: fimaTheme.backgroundColor,
-          child: Center(
-            child: Text(
-              'Terminal - Coming soon',
-              style: TextStyle(color: fimaTheme.textColor),
-            ),
-          ),
+        overlayContent = BuiltInTerminalWidget(
+          width: panelWidth,
+          height: panelHeight,
+          initialPath: overlayState.terminalPath ?? '',
+          isLeftPanel: overlayState.isLeftPanel,
+          onClose: () {
+            final panelId = overlayState.isLeftPanel ? 'left' : 'right';
+            ref.read(overlayProvider.notifier).close();
+            ref.read(panelStateProvider(panelId).notifier).refresh();
+          },
         );
       case OverlayType.none:
         return const SizedBox.shrink();

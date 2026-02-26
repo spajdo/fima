@@ -175,7 +175,16 @@ class ActionGenerator {
         break;
       case 'openTerminal':
         if (panelState.currentPath.isNotEmpty) {
-          panelController.openTerminal(panelState.currentPath);
+          final useBuiltIn = ref.read(userSettingsProvider).useBuiltInTerminal;
+          if (useBuiltIn) {
+            final focusState = ref.read(focusProvider);
+            final isLeftPanel = focusState.activePanel == ActivePanel.left;
+            ref
+                .read(overlayProvider.notifier)
+                .showTerminal(isLeftPanel, panelState.currentPath);
+          } else {
+            panelController.openTerminal(panelState.currentPath);
+          }
         }
         break;
       case 'openDefaultManager':
