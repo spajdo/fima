@@ -603,6 +603,49 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                     ],
                   ),
                 ),
+              // Operation Progress Bar
+              if (panelState.operationProgress != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: fimaTheme.surfaceColor,
+                    border: Border(
+                      top: BorderSide(color: fimaTheme.borderColor),
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${panelState.operationProgress!.operationName}: ${panelState.operationProgress!.currentItem}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: fontSize - 1,
+                          color: fimaTheme.textColor,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: LinearProgressIndicator(
+                              value: panelState.operationProgress!.progress,
+                              minHeight: 2,
+                              backgroundColor: fimaTheme.surfaceColor,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                fimaTheme.accentColor,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),

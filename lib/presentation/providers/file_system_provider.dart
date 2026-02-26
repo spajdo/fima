@@ -8,11 +8,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path/path.dart' as p;
 import 'dart:io';
+import 'dart:isolate';
 
+import 'package:archive/archive_io.dart';
 import 'package:fima/domain/entity/desktop_application.dart';
+import 'package:fima/domain/entity/panel_operation_progress.dart';
+
+import 'package:fima/infrastructure/repository/compound_file_system_repository.dart';
 
 final fileSystemRepositoryProvider = Provider<FileSystemRepository>((ref) {
-  return LocalFileSystemRepository();
+  return CompoundFileSystemRepository(LocalFileSystemRepository());
 });
 
 final panelStateProvider =
@@ -158,7 +163,9 @@ class PanelController extends StateNotifier<PanelState> {
   void enterFocusedItem() {
     if (state.items.isEmpty || state.focusedIndex >= state.items.length) return;
     final item = state.items[state.focusedIndex];
-    if (item.isDirectory || item.isParentDetails) {
+    if (item.isDirectory ||
+        item.isParentDetails ||
+        item.path.toLowerCase().endsWith('.zip')) {
       if (item.isParentDetails) {
         navigateToParent();
       } else {
@@ -454,6 +461,83 @@ class PanelController extends StateNotifier<PanelState> {
     await loadPath(state.currentPath, selectItemPath: selectPath);
   }
 
+  Future<void> extractArchive(String zipPath, String destinationPath) async {
+    final receivePort = ReceivePort();
+    try {
+      await Isolate.spawn(_isolateExtractArchive, {
+        'sendPort': receivePort.sendPort,
+        'zipPath': zipPath,
+        'destinationPath': destinationPath,
+      });
+
+      await for (final message in receivePort) {
+        if (message == null) {
+          // Completion
+          break;
+        } else if (message is Map<String, dynamic>) {
+          if (message.containsKey('error')) {
+            debugPrint('Error extracting zip: ${message['error']}');
+            break;
+          } else {
+            state = state.copyWith(
+              operationProgress: PanelOperationProgress(
+                operationName: message['operationName'],
+                progress: message['progress'],
+                currentItem: message['currentItem'],
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error launching isolate: $e');
+    } finally {
+      receivePort.close();
+      state = state.copyWith(clearOperationProgress: true);
+    }
+  }
+
+  Future<void> compressItems(
+    List<String> paths,
+    String destinationZipName,
+  ) async {
+    final receivePort = ReceivePort();
+    final zipPath = p.join(state.currentPath, destinationZipName);
+
+    try {
+      await Isolate.spawn(_isolateCompressItems, {
+        'sendPort': receivePort.sendPort,
+        'paths': paths,
+        'zipPath': zipPath,
+        'basePath': state.currentPath,
+      });
+
+      await for (final message in receivePort) {
+        if (message == null) {
+          break;
+        } else if (message is Map<String, dynamic>) {
+          if (message.containsKey('error')) {
+            debugPrint('Error creating zip: ${message['error']}');
+            break;
+          } else {
+            state = state.copyWith(
+              operationProgress: PanelOperationProgress(
+                operationName: message['operationName'],
+                progress: message['progress'],
+                currentItem: message['currentItem'],
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error launching isolate: $e');
+    } finally {
+      receivePort.close();
+      state = state.copyWith(clearOperationProgress: true);
+    }
+  }
+
   Future<void> openTerminal(String path) async {
     // Linux generic way to open terminal
     // Try generic emulator first, then specific ones
@@ -573,4 +657,105 @@ class PanelController extends StateNotifier<PanelState> {
     }
     return result;
   }
+}
+
+class _FileEntry {
+  final String absolutePath;
+  final String archivePath;
+  _FileEntry(this.absolutePath, this.archivePath);
+}
+
+void _isolateExtractArchive(Map<String, dynamic> args) {
+  final sendPort = args['sendPort'] as SendPort;
+  final zipPath = args['zipPath'] as String;
+  final destinationPath = args['destinationPath'] as String;
+
+  try {
+    final bytes = File(zipPath).readAsBytesSync();
+    final archive = ZipDecoder().decodeBytes(bytes);
+
+    int totalFiles = archive.length;
+    int processedFiles = 0;
+
+    for (final file in archive) {
+      if (file.isFile) {
+        final filename = file.name;
+        final data = file.content as List<int>;
+        final destFile = File(p.join(destinationPath, filename));
+        destFile.createSync(recursive: true);
+        destFile.writeAsBytesSync(data);
+      } else {
+        Directory(
+          p.join(destinationPath, file.name),
+        ).createSync(recursive: true);
+      }
+      processedFiles++;
+      sendPort.send({
+        'operationName': 'Extracting',
+        'progress': processedFiles / totalFiles,
+        'currentItem': p.basename(file.name),
+      });
+    }
+    sendPort.send(null);
+  } catch (e) {
+    sendPort.send({'error': e.toString()});
+  }
+}
+
+void _isolateCompressItems(Map<String, dynamic> args) {
+  final sendPort = args['sendPort'] as SendPort;
+  _isolateCompressItemsAsync(args).then((_) {}).catchError((e) {
+    sendPort.send({'error': e.toString()});
+  });
+}
+
+Future<void> _isolateCompressItemsAsync(Map<String, dynamic> args) async {
+  final sendPort = args['sendPort'] as SendPort;
+  final paths = args['paths'] as List<String>;
+  final zipPath = args['zipPath'] as String;
+  final basePath = args['basePath'] as String;
+
+  int totalFiles = 0;
+  final fileEntries = <_FileEntry>[];
+
+  for (final path in paths) {
+    final stat = FileStat.statSync(path);
+    if (stat.type == FileSystemEntityType.directory) {
+      final dir = Directory(path);
+      for (final entity in dir.listSync(recursive: true)) {
+        if (entity is File) {
+          totalFiles++;
+          final archivePath = p.relative(entity.path, from: basePath);
+          fileEntries.add(_FileEntry(entity.path, archivePath));
+        }
+      }
+    } else if (stat.type == FileSystemEntityType.file) {
+      totalFiles++;
+      final archivePath = p.relative(path, from: basePath);
+      fileEntries.add(_FileEntry(path, archivePath));
+    }
+  }
+
+  final encoder = ZipFileEncoder();
+  encoder.create(zipPath);
+
+  if (totalFiles == 0) {
+    await encoder.close();
+    sendPort.send(null);
+    return;
+  }
+
+  int processedFiles = 0;
+  for (final entry in fileEntries) {
+    await encoder.addFile(File(entry.absolutePath), entry.archivePath);
+    processedFiles++;
+    sendPort.send({
+      'operationName': 'Compressing',
+      'progress': processedFiles / totalFiles,
+      'currentItem': p.basename(entry.absolutePath),
+    });
+  }
+
+  await encoder.close();
+  sendPort.send(null);
 }

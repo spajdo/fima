@@ -128,7 +128,7 @@ class KeyMapActionDefs {
       id: 'permanentDelete',
       label: 'Permanent Delete',
       defaultShortcutLinux: 'Shift+Delete',
-      defaultShortcutMacOS: 'Shift+Delete',
+      defaultShortcutMacOS: '⇧ + Delete',
       showInOmniPanel: true,
       omniPanelOrder: 12,
     ),
@@ -200,7 +200,7 @@ class KeyMapActionDefs {
       id: 'clearQuickFilter',
       label: 'Clear Quick Filter',
       defaultShortcutLinux: 'Ctrl+Backspace',
-      defaultShortcutMacOS: '⌘ + ⌫',
+      defaultShortcutMacOS: '⌘ + Backspace',
       showInOmniPanel: true,
       omniPanelOrder: 21,
     ),
@@ -289,6 +289,28 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+Shift+P',
       defaultShortcutMacOS: '⌘ + ⇧ + P',
       isEditable: false,
+    ),
+    KeyMapAction(
+      id: 'extractHere',
+      label: 'Extract Here',
+      defaultShortcutLinux: 'Ctrl+E',
+      defaultShortcutMacOS: '⌃ + E',
+      showInOmniPanel: false, // Conditionally added in ActionProvider
+    ),
+    KeyMapAction(
+      id: 'extractToOpposite',
+      label: 'Extract to Opposite Panel',
+      defaultShortcutLinux: 'Ctrl+Shift+E',
+      defaultShortcutMacOS: '⌃ + ⇧ + E',
+      showInOmniPanel: false, // Conditionally added in ActionProvider
+    ),
+    KeyMapAction(
+      id: 'compress',
+      label: 'Compress',
+      defaultShortcutLinux: 'Ctrl+Alt+Z',
+      defaultShortcutMacOS: '⌘ + ⌥ + Z',
+      showInOmniPanel: true,
+      omniPanelOrder: 24,
     ),
   ];
 

@@ -33,7 +33,20 @@ class ActionGenerator {
 
     final settingsNotifier = ref.read(userSettingsProvider.notifier);
 
-    return KeyMapActionDefs.omniPanelActions.map((action) {
+    final panelState = ref.read(panelStateProvider(activePanelId));
+    bool isZipFocused = false;
+    if (panelState.focusedIndex >= 0 &&
+        panelState.focusedIndex < panelState.items.length) {
+      final focusedItem = panelState.items[panelState.focusedIndex];
+      // A zip file itself (not inside another zip or directory) might just end with .zip
+      if (focusedItem.path.toLowerCase().endsWith('.zip') &&
+          !focusedItem.isDirectory &&
+          !focusedItem.isParentDetails) {
+        isZipFocused = true;
+      }
+    }
+
+    final actions = KeyMapActionDefs.omniPanelActions.map((action) {
       return AppAction(
         id: action.id,
         label: action.label,
@@ -42,6 +55,48 @@ class ActionGenerator {
             _executeAction(action.id, activePanelId, panelController),
       );
     }).toList();
+
+    if (isZipFocused) {
+      final extractHereAction = KeyMapActionDefs.getById('extractHere');
+      final extractOppositeAction = KeyMapActionDefs.getById(
+        'extractToOpposite',
+      );
+
+      if (extractHereAction != null && extractOppositeAction != null) {
+        actions.insert(
+          0,
+          AppAction(
+            id: extractOppositeAction.id,
+            label: extractOppositeAction.label,
+            shortcut: settingsNotifier.getEffectiveShortcut(
+              extractOppositeAction.id,
+            ),
+            callback: () => _executeAction(
+              extractOppositeAction.id,
+              activePanelId,
+              panelController,
+            ),
+          ),
+        );
+        actions.insert(
+          0,
+          AppAction(
+            id: extractHereAction.id,
+            label: extractHereAction.label,
+            shortcut: settingsNotifier.getEffectiveShortcut(
+              extractHereAction.id,
+            ),
+            callback: () => _executeAction(
+              extractHereAction.id,
+              activePanelId,
+              panelController,
+            ),
+          ),
+        );
+      }
+    }
+
+    return actions;
   }
 
   void _executeAction(
@@ -52,6 +107,15 @@ class ActionGenerator {
     final panelState = ref.read(panelStateProvider(activePanelId));
 
     switch (actionId) {
+      case 'extractHere':
+        _extractZip(activePanelId, panelController, extractToOpposite: false);
+        break;
+      case 'extractToOpposite':
+        _extractZip(activePanelId, panelController, extractToOpposite: true);
+        break;
+      case 'compress':
+        _compressItems(activePanelId, panelController, context);
+        break;
       case 'copyOperation':
         ref.read(operationStatusProvider.notifier).startCopy();
         break;
@@ -245,6 +309,91 @@ class ActionGenerator {
 
     if (paths.isNotEmpty) {
       panelController.copyToClipboard(paths, operation);
+    }
+  }
+
+  void _extractZip(
+    String activePanelId,
+    dynamic panelController, {
+    required bool extractToOpposite,
+  }) {
+    final panelState = ref.read(panelStateProvider(activePanelId));
+    if (panelState.focusedIndex >= 0 &&
+        panelState.focusedIndex < panelState.items.length) {
+      final item = panelState.items[panelState.focusedIndex];
+      if (item.path.toLowerCase().endsWith('.zip')) {
+        String destinationPath;
+        dynamic refreshController;
+
+        if (extractToOpposite) {
+          final oppositePanelId = activePanelId == 'left' ? 'right' : 'left';
+          destinationPath = ref
+              .read(panelStateProvider(oppositePanelId))
+              .currentPath;
+          // Capture the opposite panel controller now, before the dialog closes
+          refreshController = ref.read(
+            panelStateProvider(oppositePanelId).notifier,
+          );
+        } else {
+          destinationPath = panelState.currentPath;
+          refreshController = panelController;
+        }
+
+        panelController.extractArchive(item.path, destinationPath).then((_) {
+          refreshController.refresh();
+        });
+      }
+    }
+  }
+
+  void _compressItems(
+    String activePanelId,
+    dynamic panelController,
+    BuildContext context,
+  ) {
+    final panelState = ref.read(panelStateProvider(activePanelId));
+    List<String> paths = panelState.selectedItems.toList();
+
+    if (paths.isEmpty) {
+      if (panelState.focusedIndex >= 0 &&
+          panelState.focusedIndex < panelState.items.length) {
+        final item = panelState.items[panelState.focusedIndex];
+        if (!item.isParentDetails) {
+          paths.add(item.path);
+        }
+      }
+    }
+
+    if (paths.isEmpty) return;
+
+    if (paths.length == 1) {
+      // Single item: compress directly using its name
+      final itemName = paths.first.split('/').last;
+      final zipName = '$itemName.zip';
+      panelController.compressItems(paths, zipName).then((_) {
+        panelController.refresh();
+      });
+    } else {
+      // Multiple items: ask for name
+      showDialog(
+        context: context,
+        barrierColor: Colors.transparent,
+        builder: (context) => const TextInputDialog(
+          title: 'Compress Items',
+          label: 'Archive Name (e.g. archive.zip)',
+          okButtonLabel: 'Compress',
+        ),
+      ).then((name) {
+        if (name != null && name.toString().isNotEmpty) {
+          String zipName = name.toString();
+          if (!zipName.toLowerCase().endsWith('.zip')) {
+            zipName += '.zip';
+          }
+          panelController.compressItems(paths, zipName).then((_) {
+            panelController.refresh();
+          });
+        }
+      });
     }
   }
 }

@@ -1,4 +1,5 @@
 import 'package:fima/domain/entity/file_system_item.dart';
+import 'package:fima/domain/entity/panel_operation_progress.dart';
 
 enum SortColumn { name, size, modified }
 
@@ -12,6 +13,7 @@ class PanelState {
   final String? editingPath;
   final List<String> visitedPaths;
   final String quickFilterText;
+  final PanelOperationProgress? operationProgress;
 
   const PanelState({
     this.currentPath = '',
@@ -23,6 +25,7 @@ class PanelState {
     this.editingPath,
     this.visitedPaths = const [],
     this.quickFilterText = '',
+    this.operationProgress,
   });
 
   PanelState copyWith({
@@ -35,6 +38,8 @@ class PanelState {
     String? editingPath,
     List<String>? visitedPaths,
     String? quickFilterText,
+    PanelOperationProgress? operationProgress,
+    bool clearOperationProgress = false,
   }) {
     return PanelState(
       currentPath: currentPath ?? this.currentPath,
@@ -46,6 +51,9 @@ class PanelState {
       editingPath: editingPath ?? this.editingPath,
       visitedPaths: visitedPaths ?? this.visitedPaths,
       quickFilterText: quickFilterText ?? this.quickFilterText,
+      operationProgress: clearOperationProgress
+          ? null
+          : (operationProgress ?? this.operationProgress),
     );
   }
 
@@ -60,6 +68,7 @@ class PanelState {
       editingPath: null,
       visitedPaths: visitedPaths,
       quickFilterText: quickFilterText,
+      operationProgress: operationProgress,
     );
   }
 }

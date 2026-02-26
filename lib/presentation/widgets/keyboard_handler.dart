@@ -597,6 +597,15 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
       case 'moveOperation':
         ref.read(operationStatusProvider.notifier).startMove();
         return KeyEventResult.handled;
+      case 'compress':
+        _showCompressDialog(
+          context,
+          ref,
+          activePanelId,
+          panelController,
+          currentPanelState,
+        );
+        return KeyEventResult.handled;
       case 'rename':
         panelController.startRenaming();
         return KeyEventResult.handled;
@@ -660,6 +669,28 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         return KeyEventResult.handled;
       case 'copyPath':
         _copyPathToClipboard(ref, activePanelId);
+        return KeyEventResult.handled;
+      case 'extractHere':
+        final item = currentPanelState.items[currentPanelState.focusedIndex];
+        if (item.path.toLowerCase().endsWith('.zip')) {
+          panelController
+              .extractArchive(item.path, currentPanelState.currentPath)
+              .then((_) {
+                panelController.refresh();
+              });
+        }
+        return KeyEventResult.handled;
+      case 'extractToOpposite':
+        final item = currentPanelState.items[currentPanelState.focusedIndex];
+        if (item.path.toLowerCase().endsWith('.zip')) {
+          final oppositePanelId = activePanelId == 'left' ? 'right' : 'left';
+          final destPath = ref
+              .read(panelStateProvider(oppositePanelId))
+              .currentPath;
+          panelController.extractArchive(item.path, destPath).then((_) {
+            ref.read(panelStateProvider(oppositePanelId).notifier).refresh();
+          });
+        }
         return KeyEventResult.handled;
       default:
         return null;
@@ -747,5 +778,57 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         ref.read(userSettingsProvider.notifier).addWorkspace(workspace);
       }
     });
+  }
+
+  void _showCompressDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String activePanelId,
+    dynamic panelController,
+    dynamic panelState,
+  ) {
+    List<String> paths = panelState.selectedItems.toList();
+
+    if (paths.isEmpty) {
+      if (panelState.focusedIndex >= 0 &&
+          panelState.focusedIndex < panelState.items.length) {
+        final item = panelState.items[panelState.focusedIndex];
+        if (!item.isParentDetails) {
+          paths.add(item.path);
+        }
+      }
+    }
+
+    if (paths.isEmpty) return;
+
+    if (paths.length == 1) {
+      // Single item: compress directly using its name
+      final itemName = paths.first.split('/').last;
+      final zipName = '$itemName.zip';
+      panelController.compressItems(paths, zipName).then((_) {
+        panelController.refresh();
+      });
+    } else {
+      // Multiple items: ask for name
+      showDialog(
+        context: context,
+        barrierColor: Colors.transparent,
+        builder: (context) => const TextInputDialog(
+          title: 'Compress Items',
+          label: 'Archive Name (e.g. archive.zip)',
+          okButtonLabel: 'Compress',
+        ),
+      ).then((name) {
+        if (name != null && name.toString().isNotEmpty) {
+          String zipName = name.toString();
+          if (!zipName.toLowerCase().endsWith('.zip')) {
+            zipName += '.zip';
+          }
+          panelController.compressItems(paths, zipName).then((_) {
+            panelController.refresh();
+          });
+        }
+      });
+    }
   }
 }
