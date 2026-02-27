@@ -8,7 +8,9 @@ import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart';
+import 'package:fima/presentation/widgets/popups/connect_server_dialog.dart';
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
+import 'package:fima/presentation/widgets/popups/omni_dialog.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -226,6 +228,20 @@ class ActionGenerator {
         final focusState = ref.read(focusProvider);
         final isLeftPanel = focusState.activePanel == ActivePanel.left;
         ref.read(overlayProvider.notifier).showSettings(isLeftPanel);
+        break;
+      case 'connectToServer':
+        showDialog(
+          context: context,
+          barrierColor: Colors.black54,
+          builder: (context) => const ConnectServerDialog(),
+        );
+        break;
+      case 'remoteDialog':
+        showDialog(
+          context: context,
+          barrierColor: Colors.transparent,
+          builder: (context) => const OmniDialog(initialText: 'r '),
+        );
         break;
     }
   }

@@ -1,4 +1,5 @@
 import 'package:fima/domain/entity/path_index_entry.dart';
+import 'package:fima/domain/entity/remote_connection.dart';
 import 'package:fima/domain/entity/workspace.dart';
 
 class UserSettings {
@@ -18,6 +19,7 @@ class UserSettings {
   final String themeName;
   final Map<String, String> keyMap;
   final bool useBuiltInTerminal;
+  final List<RemoteConnection> remoteConnections;
   final int leftPanelSortColumn;
   final bool leftPanelSortAscending;
   final int rightPanelSortColumn;
@@ -40,6 +42,7 @@ class UserSettings {
     this.themeName = 'Light',
     this.keyMap = const {},
     this.useBuiltInTerminal = false,
+    this.remoteConnections = const [],
     this.leftPanelSortColumn = 0,
     this.leftPanelSortAscending = true,
     this.rightPanelSortColumn = 0,
@@ -65,6 +68,7 @@ class UserSettings {
       themeName: 'Light',
       keyMap: {},
       useBuiltInTerminal: false,
+      remoteConnections: const [],
       leftPanelSortColumn: 0,
       leftPanelSortAscending: true,
       rightPanelSortColumn: 0,
@@ -99,6 +103,9 @@ class UserSettings {
           ) ??
           {},
       useBuiltInTerminal: json['useBuiltInTerminal'] as bool? ?? false,
+      remoteConnections: (json['remoteConnections'] as List? ?? [])
+          .map((e) => RemoteConnection.fromJson(e as Map<String, dynamic>))
+          .toList(),
       leftPanelSortColumn: json['leftPanelSortColumn'] as int? ?? 0,
       leftPanelSortAscending: json['leftPanelSortAscending'] as bool? ?? true,
       rightPanelSortColumn: json['rightPanelSortColumn'] as int? ?? 0,
@@ -125,6 +132,7 @@ class UserSettings {
       'themeName': themeName,
       'keyMap': keyMap,
       'useBuiltInTerminal': useBuiltInTerminal,
+      'remoteConnections': remoteConnections.map((e) => e.toJson()).toList(),
       'leftPanelSortColumn': leftPanelSortColumn,
       'leftPanelSortAscending': leftPanelSortAscending,
       'rightPanelSortColumn': rightPanelSortColumn,
@@ -150,6 +158,7 @@ class UserSettings {
     String? themeName,
     Map<String, String>? keyMap,
     bool? useBuiltInTerminal,
+    List<RemoteConnection>? remoteConnections,
     int? leftPanelSortColumn,
     bool? leftPanelSortAscending,
     int? rightPanelSortColumn,
@@ -172,6 +181,7 @@ class UserSettings {
       themeName: themeName ?? this.themeName,
       keyMap: keyMap ?? this.keyMap,
       useBuiltInTerminal: useBuiltInTerminal ?? this.useBuiltInTerminal,
+      remoteConnections: remoteConnections ?? this.remoteConnections,
       leftPanelSortColumn: leftPanelSortColumn ?? this.leftPanelSortColumn,
       leftPanelSortAscending:
           leftPanelSortAscending ?? this.leftPanelSortAscending,

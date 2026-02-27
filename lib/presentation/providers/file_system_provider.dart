@@ -8,11 +8,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path/path.dart' as p;
 import 'dart:io';
+import 'dart:async';
 import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
 import 'package:fima/domain/entity/desktop_application.dart';
 import 'package:fima/domain/entity/panel_operation_progress.dart';
+import 'package:fima/domain/entity/remote_connection.dart';
 
 import 'package:fima/infrastructure/repository/compound_file_system_repository.dart';
 
@@ -179,6 +181,9 @@ class PanelController extends StateNotifier<PanelState> {
     }
   }
 
+  // We need to keep a reference to active file watchers so we can dispose them
+  final Map<String, StreamSubscription> _activeFileWatchers = {};
+
   void enterFocusedItem() {
     if (state.items.isEmpty || state.focusedIndex >= state.items.length) return;
     final item = state.items[state.focusedIndex];
@@ -190,9 +195,141 @@ class PanelController extends StateNotifier<PanelState> {
       } else {
         loadPath(item.path, addToVisited: true);
       }
+    } else if (item.path.startsWith('ssh://')) {
+      _openRemoteFileLocally(item.path);
     } else {
       OpenFile.open(item.path);
     }
+  }
+
+  /// Downloads a remote SSH file to a local temp dir and opens it with the
+  /// system default application (e.g. VS Code for .log / .txt files).
+  /// Also starts a background tail worker that polls the remote file every
+  /// 2 seconds and appends new bytes to the local copy so the editor
+  /// auto-reloads when the remote file grows.
+  /// If the user modifies the local file, it triggers an upload back to the remote server.
+  Future<void> _openRemoteFileLocally(String sshPath) async {
+    try {
+      final compound = _repository;
+      if (compound is! CompoundFileSystemRepository) return;
+
+      final connId = RemoteConnection.connectionIdFromSshUrl(sshPath);
+      final remotePath = RemoteConnection.remotePathFromSshUrl(sshPath);
+      final fileName = remotePath.split('/').last;
+
+      // Build a stable temp path that mirrors the remote structure.
+      final tmpDir = Directory(
+        '/tmp/fima_ssh/$connId${remotePath.substring(0, remotePath.length - fileName.length)}',
+      );
+      await tmpDir.create(recursive: true);
+
+      final localPath = '${tmpDir.path}$fileName';
+      final file = File(localPath);
+
+      // Cancel existing watcher if any
+      await _activeFileWatchers[sshPath]?.cancel();
+      _activeFileWatchers.remove(sshPath);
+
+      // Download the initial snapshot and get its byte length.
+      var currentSize = await compound.sshRepository.downloadToLocal(
+        sshPath,
+        localPath,
+      );
+
+      final sftp = compound.sshRepository.getSftpClientFor(connId);
+      if (sftp == null) return;
+
+      // Start live-tail: poll every 2 s, append new bytes to local file.
+      void startTailing() {
+        compound.sshRepository.tailService.startTailing(
+          sftp: sftp,
+          sshPath: sshPath,
+          remotePath: remotePath,
+          localPath: localPath,
+          initialSize: currentSize,
+        );
+      }
+
+      startTailing();
+
+      // Watch local file for user modifications
+      bool isUploading = false;
+
+      final watcher = file.watch().listen((event) async {
+        if (isUploading) return;
+
+        // Wait a tiny bit to debounce rapid save events from editors
+        await Future.delayed(const Duration(milliseconds: 100));
+
+        try {
+          // Suspend tailing while we upload
+          isUploading = true;
+          compound.sshRepository.tailService.stopTailing(sshPath);
+
+          // Upload the file back to the remote server
+          debugPrint('Local file edited, uploading to remote: $sshPath');
+          await compound.sshRepository.uploadFromLocal(localPath, sshPath);
+
+          // Re-measure after upload and resume tailing
+          currentSize = await file.length();
+          startTailing();
+        } catch (e) {
+          debugPrint('Error uploading edited file: $e');
+        } finally {
+          isUploading = false;
+        }
+      });
+      _activeFileWatchers[sshPath] = watcher;
+
+      // Open in the system default app — VS Code for text/log files.
+      await OpenFile.open(localPath);
+    } catch (e) {
+      debugPrint('Error opening remote file locally: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    for (var watcher in _activeFileWatchers.values) {
+      watcher.cancel();
+    }
+    _activeFileWatchers.clear();
+    super.dispose();
+  }
+
+  /// Navigate this panel to the SSH server's root directory.
+  Future<void> loadSshPath(RemoteConnection connection) async {
+    final sshPath = connection.buildPath('/');
+    await loadPath(sshPath, addToVisited: false);
+  }
+
+  /// Disconnect a remote SSH session and navigate back to local home.
+  Future<void> disconnectSsh() async {
+    final compound = _repository;
+    if (compound is! CompoundFileSystemRepository) return;
+
+    // Auto-stop all file tailing for all connections on disconnect
+    // Usually disconnectSsh handles the active connection for this panel.
+    final currentPath = state.currentPath;
+    if (currentPath.startsWith('ssh://')) {
+      final connId = RemoteConnection.connectionIdFromSshUrl(currentPath);
+      compound.sshRepository.disconnect(connId);
+
+      // Also stop active watchers for this connection
+      final keysToRemove = _activeFileWatchers.keys
+          .where((k) => k.startsWith('ssh://$connId'))
+          .toList();
+      for (final k in keysToRemove) {
+        _activeFileWatchers[k]?.cancel();
+        _activeFileWatchers.remove(k);
+      }
+    }
+
+    final homeDir =
+        Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        '/';
+    await loadPath(homeDir, addToVisited: true);
   }
 
   void toggleSelection(String path) {

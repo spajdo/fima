@@ -312,6 +312,22 @@ class KeyMapActionDefs {
       showInOmniPanel: true,
       omniPanelOrder: 24,
     ),
+    KeyMapAction(
+      id: 'connectToServer',
+      label: 'Connect to Server',
+      defaultShortcutLinux: 'Ctrl+Shift+R',
+      defaultShortcutMacOS: '⌘ + ⇧ + R',
+      showInOmniPanel: true,
+      omniPanelOrder: 25,
+    ),
+    KeyMapAction(
+      id: 'remoteDialog',
+      label: 'Remote Connections',
+      defaultShortcutLinux: 'Ctrl+R',
+      defaultShortcutMacOS: '⌘ + R',
+      showInOmniPanel: true,
+      omniPanelOrder: 26,
+    ),
   ];
 
   static String normalizeShortcut(String shortcut) {

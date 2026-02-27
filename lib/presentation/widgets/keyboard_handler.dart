@@ -13,6 +13,7 @@ import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart';
+import 'package:fima/presentation/widgets/popups/connect_server_dialog.dart';
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
 import 'package:fima/presentation/widgets/popups/omni_dialog.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
@@ -695,6 +696,20 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
           context: context,
           barrierColor: Colors.transparent,
           builder: (context) => const OmniDialog(initialText: 'w '),
+        );
+        return KeyEventResult.handled;
+      case 'remoteDialog':
+        showDialog(
+          context: context,
+          barrierColor: Colors.transparent,
+          builder: (context) => const OmniDialog(initialText: 'r '),
+        );
+        return KeyEventResult.handled;
+      case 'connectToServer':
+        showDialog(
+          context: context,
+          barrierColor: Colors.black54,
+          builder: (context) => const ConnectServerDialog(),
         );
         return KeyEventResult.handled;
       case 'omniPanelPaths':

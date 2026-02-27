@@ -1,17 +1,21 @@
 import 'package:fima/domain/entity/app_action.dart';
 import 'package:fima/domain/entity/path_index_entry.dart';
+import 'package:fima/domain/entity/remote_connection.dart';
 import 'package:fima/domain/entity/workspace.dart';
+import 'package:fima/infrastructure/repository/compound_file_system_repository.dart';
+import 'package:fima/infrastructure/service/secure_password_service.dart';
 import 'package:fima/presentation/providers/action_provider.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
+import 'package:fima/presentation/widgets/popups/connect_server_dialog.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-enum OmniMode { path, action, workspace }
+enum OmniMode { path, action, workspace, remote }
 
 enum WorkspaceAction { none, edit, delete }
 
@@ -32,12 +36,14 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
   List<PathIndexEntry> _filteredPaths = [];
   List<AppAction> _filteredActions = [];
   List<Workspace> _filteredWorkspaces = [];
+  List<RemoteConnection> _filteredConnections = [];
   int _selectedIndex = 0;
   WorkspaceAction _focusedAction = WorkspaceAction.none;
 
   OmniMode get _mode {
     final text = _controller.text;
     if (text.startsWith('w ')) return OmniMode.workspace;
+    if (text.startsWith('r ') || text.startsWith('r ')) return OmniMode.remote;
     if (text.startsWith('>')) return OmniMode.action;
     return OmniMode.path;
   }
@@ -45,6 +51,14 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
   String get _workspaceQuery {
     final text = _controller.text;
     if (_mode == OmniMode.workspace) {
+      return text.substring(2).toLowerCase();
+    }
+    return '';
+  }
+
+  String get _remoteQuery {
+    final text = _controller.text;
+    if (_mode == OmniMode.remote) {
       return text.substring(2).toLowerCase();
     }
     return '';
@@ -106,6 +120,21 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
         }).toList();
         _filteredPaths = [];
         _filteredActions = [];
+        _filteredConnections = [];
+        _selectedIndex = 0;
+      });
+    } else if (_mode == OmniMode.remote) {
+      final query = _remoteQuery;
+      final allConnections = ref.read(userSettingsProvider).remoteConnections;
+
+      setState(() {
+        _filteredConnections = allConnections.where((c) {
+          return c.name.toLowerCase().contains(query) ||
+              c.host.toLowerCase().contains(query);
+        }).toList();
+        _filteredPaths = [];
+        _filteredActions = [];
+        _filteredWorkspaces = [];
         _selectedIndex = 0;
       });
     } else {
@@ -115,6 +144,7 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
       setState(() {
         _filteredActions = [];
         _filteredWorkspaces = [];
+        _filteredConnections = [];
         _filteredPaths = allPaths.where((entry) {
           return entry.path.toLowerCase().contains(query);
         }).toList();
@@ -135,6 +165,17 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
       }
       return;
     }
+    if (_mode == OmniMode.remote && _focusedAction != WorkspaceAction.none) {
+      if (_selectedIndex < _filteredConnections.length) {
+        final connection = _filteredConnections[_selectedIndex];
+        if (_focusedAction == WorkspaceAction.edit) {
+          _showEditConnectionDialog(connection);
+        } else if (_focusedAction == WorkspaceAction.delete) {
+          _deleteConnection(connection);
+        }
+      }
+      return;
+    }
     _handleSubmit();
   }
 
@@ -151,6 +192,13 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
         final workspace = _filteredWorkspaces[_selectedIndex];
         Navigator.of(context).pop();
         _loadWorkspace(workspace);
+      }
+    } else if (_mode == OmniMode.remote) {
+      if (_focusedAction == WorkspaceAction.none &&
+          _filteredConnections.isNotEmpty) {
+        final connection = _filteredConnections[_selectedIndex];
+        Navigator.of(context).pop();
+        _connectToRemote(connection);
       }
     } else {
       if (_filteredPaths.isNotEmpty) {
@@ -216,6 +264,8 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
         ? _filteredActions.length
         : _mode == OmniMode.workspace
         ? _filteredWorkspaces.length
+        : _mode == OmniMode.remote
+        ? _filteredConnections.length
         : _filteredPaths.length;
     final itemHeight = 48.0;
     final maxListHeight = 300.0;
@@ -259,8 +309,10 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                       });
                     },
                     const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
-                      if (_mode == OmniMode.workspace &&
-                          _selectedIndex < _filteredWorkspaces.length) {
+                      if ((_mode == OmniMode.workspace &&
+                              _selectedIndex < _filteredWorkspaces.length) ||
+                          (_mode == OmniMode.remote &&
+                              _selectedIndex < _filteredConnections.length)) {
                         setState(() {
                           if (_focusedAction == WorkspaceAction.none) {
                             _focusedAction = WorkspaceAction.delete;
@@ -273,8 +325,10 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                       }
                     },
                     const SingleActivator(LogicalKeyboardKey.arrowRight): () {
-                      if (_mode == OmniMode.workspace &&
-                          _selectedIndex < _filteredWorkspaces.length) {
+                      if ((_mode == OmniMode.workspace &&
+                              _selectedIndex < _filteredWorkspaces.length) ||
+                          (_mode == OmniMode.remote &&
+                              _selectedIndex < _filteredConnections.length)) {
                         setState(() {
                           if (_focusedAction == WorkspaceAction.none) {
                             _focusedAction = WorkspaceAction.edit;
@@ -298,6 +352,8 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                       border: InputBorder.none,
                       hintText: _mode == OmniMode.workspace
                           ? 'Search workspaces...'
+                          : _mode == OmniMode.remote
+                          ? 'Search connections...'
                           : 'Type to search...',
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(
@@ -306,6 +362,8 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                       ),
                       prefixIcon: _mode == OmniMode.workspace
                           ? Icon(Icons.work, color: fimaTheme.textColor)
+                          : _mode == OmniMode.remote
+                          ? Icon(Icons.dns, color: fimaTheme.textColor)
                           : null,
                       hintStyle: TextStyle(color: fimaTheme.secondaryTextColor),
                     ),
@@ -357,6 +415,28 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                           },
                           onDelete: () {
                             _deleteWorkspace(workspace);
+                          },
+                        );
+                      } else if (_mode == OmniMode.remote) {
+                        final connection = _filteredConnections[index];
+                        return _buildRemoteConnectionItem(
+                          connection: connection,
+                          isSelected: isSelected,
+                          focusedAction: index == _selectedIndex
+                              ? _focusedAction
+                              : WorkspaceAction.none,
+                          onTap: () {
+                            setState(() {
+                              _selectedIndex = index;
+                              _focusedAction = WorkspaceAction.none;
+                            });
+                            _handleSubmit();
+                          },
+                          onEdit: () {
+                            _showEditConnectionDialog(connection);
+                          },
+                          onDelete: () {
+                            _deleteConnection(connection);
                           },
                         );
                       } else {
@@ -512,6 +592,144 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
             size: 20,
             color: isFocused ? Colors.white : fimaTheme.secondaryTextColor,
           ),
+        ),
+      ),
+    );
+  }
+
+  // ── Remote Connection helpers ────────────────────────────────────────────
+
+  Future<void> _connectToRemote(RemoteConnection connection) async {
+    // Capture all ref-dependent values BEFORE any awaits, because the dialog
+    // may be disposed (popped) by the time the async calls complete.
+    final compoundRepo =
+        ref.read(fileSystemRepositoryProvider) as CompoundFileSystemRepository;
+    final sshRepo = compoundRepo.sshRepository;
+    final focusController = ref.read(focusProvider.notifier);
+    final activePanelId = focusController.getActivePanelId();
+    final panelNotifier = ref.read(panelStateProvider(activePanelId).notifier);
+
+    if (!sshRepo.isConnected(connection.id)) {
+      // Try remembered password first.
+      String? password;
+      if (connection.rememberPassword) {
+        password = await SecurePasswordService().getPassword(connection.id);
+      }
+
+      if (password != null && password.isNotEmpty) {
+        try {
+          await sshRepo.connect(connection, password);
+        } catch (e) {
+          // Password may be stale; open dialog to re-enter.
+          if (mounted) {
+            showDialog(
+              context: context,
+              barrierColor: Colors.black54,
+              builder: (_) =>
+                  ConnectServerDialog(existingConnection: connection),
+            );
+          }
+          return;
+        }
+      } else {
+        // No saved password, open dialog.
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierColor: Colors.black54,
+            builder: (_) => ConnectServerDialog(existingConnection: connection),
+          );
+        }
+        return;
+      }
+    }
+
+    // Navigate the active panel to the server root.
+    panelNotifier.loadSshPath(connection);
+  }
+
+  void _showEditConnectionDialog(RemoteConnection connection) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (_) => ConnectServerDialog(existingConnection: connection),
+    ).then((_) => _updateFilter());
+  }
+
+  void _deleteConnection(RemoteConnection connection) {
+    ref
+        .read(userSettingsProvider.notifier)
+        .deleteRemoteConnection(connection.id);
+    _updateFilter();
+  }
+
+  Widget _buildRemoteConnectionItem({
+    required RemoteConnection connection,
+    required bool isSelected,
+    required WorkspaceAction focusedAction,
+    required VoidCallback onTap,
+    required VoidCallback onEdit,
+    required VoidCallback onDelete,
+  }) {
+    final fimaTheme = ref.watch(themeProvider);
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        color: isSelected ? fimaTheme.accentColor.withValues(alpha: 0.1) : null,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(Icons.dns, size: 24, color: fimaTheme.accentColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    connection.name,
+                    style: TextStyle(
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                      fontSize: 14,
+                      color: fimaTheme.textColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    '${connection.username}@${connection.host}:${connection.port}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: fimaTheme.secondaryTextColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildActionButton(
+                  icon: Icons.edit,
+                  tooltip: 'Edit',
+                  isFocused: focusedAction == WorkspaceAction.edit,
+                  onTap: onEdit,
+                ),
+                const SizedBox(width: 8),
+                _buildActionButton(
+                  icon: Icons.delete,
+                  tooltip: 'Delete',
+                  isFocused: focusedAction == WorkspaceAction.delete,
+                  onTap: onDelete,
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

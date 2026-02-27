@@ -1,6 +1,7 @@
 import 'package:fima/domain/entity/app_theme.dart';
 import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/entity/panel_state.dart';
+import 'package:fima/domain/entity/remote_connection.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
@@ -14,7 +15,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_icon/file_icon.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
-import 'package:open_file/open_file.dart';
 
 class FilePanel extends ConsumerStatefulWidget {
   final String panelId;
@@ -84,15 +84,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     if (_lastTappedIndex == index &&
         _lastTapTime != null &&
         now.difference(_lastTapTime!) < _doubleTapDelay) {
-      if (item.isDirectory || item.isParentDetails) {
-        if (item.isParentDetails) {
-          controller.navigateToParent();
-        } else {
-          controller.loadPath(item.path, addToVisited: true);
-        }
-      } else {
-        OpenFile.open(item.path);
-      }
+      controller.enterFocusedItem();
       _lastTappedIndex = null;
       _lastTapTime = null;
     } else {
@@ -250,6 +242,86 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     );
   }
 
+  /// Shows confirmation for disconnecting SSH and then disconnects.
+  Future<void> _confirmDisconnect() async {
+    final controller = ref.read(panelStateProvider(widget.panelId).notifier);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Disconnect from server?'),
+        content: const Text('The remote connection will be closed.'),
+        actions: [
+          FilledButton(
+            autofocus: true,
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('OK'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await controller.disconnectSsh();
+    }
+  }
+
+  /// Builds the SSH connection header bar shown in place of the local path header.
+  Widget _buildSshHeader(
+    PanelState panelState,
+    FimaTheme fimaTheme,
+    ThemeData theme,
+    double fontSize,
+  ) {
+    final connId = RemoteConnection.connectionIdFromSshUrl(
+      panelState.currentPath,
+    );
+    final settings = ref.read(userSettingsProvider);
+    final connection = settings.remoteConnections
+        .cast<RemoteConnection?>()
+        .firstWhere((c) => c?.id == connId, orElse: () => null);
+    final connectionName = connection?.name ?? connId;
+    final remotePath = RemoteConnection.remotePathFromSshUrl(
+      panelState.currentPath,
+    );
+
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: fimaTheme.surfaceColor,
+        border: Border(bottom: BorderSide(color: fimaTheme.borderColor)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.dns, size: 14, color: fimaTheme.accentColor),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              '$connectionName — $remotePath',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: fimaTheme.textColor,
+                fontSize: 12,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          InkWell(
+            onTap: _confirmDisconnect,
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: Icon(Icons.close, size: 14, color: fimaTheme.textColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final panelState = ref.watch(panelStateProvider(widget.panelId));
@@ -311,43 +383,50 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           ),
           child: Column(
             children: [
-              // Header with current path
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                color: fimaTheme.surfaceColor,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: InkWell(
-                        onTap: () =>
-                            _showPathEditor(context, panelState.currentPath),
-                        child: Text(
-                          panelState.currentPath.isEmpty
-                              ? '...'
-                              : panelState.currentPath,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontSize: fontSize,
-                            color: fimaTheme.textColor,
+              // SSH header (shown only for SSH paths)
+              if (panelState.currentPath.startsWith('ssh://'))
+                _buildSshHeader(panelState, fimaTheme, theme, fontSize),
+              // Local path header
+              if (!panelState.currentPath.startsWith('ssh://'))
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  color: fimaTheme.surfaceColor,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: () =>
+                              _showPathEditor(context, panelState.currentPath),
+                          child: Text(
+                            panelState.currentPath.isEmpty
+                                ? '...'
+                                : panelState.currentPath,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontSize: fontSize,
+                              color: fimaTheme.textColor,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        Icons.edit,
-                        size: fontSize + 2,
-                        color: fimaTheme.textColor,
+                      IconButton(
+                        icon: Icon(
+                          Icons.edit,
+                          size: fontSize + 2,
+                          color: fimaTheme.textColor,
+                        ),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        tooltip: 'Edit path',
+                        onPressed: () =>
+                            _showPathEditor(context, panelState.currentPath),
                       ),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      tooltip: 'Edit path',
-                      onPressed: () =>
-                          _showPathEditor(context, panelState.currentPath),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
               // Column headers
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8),

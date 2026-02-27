@@ -1,5 +1,6 @@
 import 'package:fima/domain/entity/key_map_action.dart';
 import 'package:fima/domain/entity/path_index_entry.dart';
+import 'package:fima/domain/entity/remote_connection.dart';
 import 'package:fima/domain/entity/user_settings.dart';
 import 'package:fima/domain/entity/workspace.dart';
 import 'package:fima/infrastructure/service/settings_service.dart';
@@ -269,6 +270,34 @@ class SettingsController extends StateNotifier<UserSettings> {
   /// Reset all keyboard shortcuts to defaults
   void resetKeyMapToDefault() {
     state = state.copyWith(keyMap: {});
+    save();
+  }
+
+  /// Add a new remote connection
+  void addRemoteConnection(RemoteConnection connection) {
+    final List<RemoteConnection> newList = List.from(state.remoteConnections);
+    newList.removeWhere((c) => c.id == connection.id);
+    newList.add(connection);
+    state = state.copyWith(remoteConnections: newList);
+    save();
+  }
+
+  /// Update an existing remote connection
+  void updateRemoteConnection(String id, RemoteConnection connection) {
+    final List<RemoteConnection> newList = List.from(state.remoteConnections);
+    final index = newList.indexWhere((c) => c.id == id);
+    if (index != -1) {
+      newList[index] = connection;
+      state = state.copyWith(remoteConnections: newList);
+      save();
+    }
+  }
+
+  /// Delete a remote connection by ID
+  void deleteRemoteConnection(String id) {
+    final List<RemoteConnection> newList = List.from(state.remoteConnections);
+    newList.removeWhere((c) => c.id == id);
+    state = state.copyWith(remoteConnections: newList);
     save();
   }
 }
