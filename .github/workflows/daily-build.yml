@@ -37,7 +37,7 @@ jobs:
 
       - name: Patch flutter_pty missing sys/wait.h
         run: |
-          PTY_FILE=$(find . -path "*/flutter_pty/src/flutter_pty_unix.c" 2>/dev/null | head -1)
+          PTY_FILE=$(find "$HOME/.pub-cache" -name "flutter_pty_unix.c" 2>/dev/null | head -1)
           if [ -n "$PTY_FILE" ] && ! grep -q "sys/wait.h" "$PTY_FILE"; then
             sed -i '1s/^/#include <sys\/wait.h>\n/' "$PTY_FILE"
           fi
@@ -61,30 +61,18 @@ jobs:
           mkdir -p ${PKG}/usr/share/applications
           mkdir -p ${PKG}/usr/share/icons/hicolor/512x512/apps
 
-          # Copy app bundle
           cp -r build/linux/x64/release/bundle/. ${PKG}/usr/lib/fima/
-
-          # Symlink the executable so 'fima' is on PATH
           ln -s /usr/lib/fima/fima ${PKG}/usr/bin/fima
-
-          # Desktop entry
           cp linux/packaging/sk.spajdo.fima.desktop \
              ${PKG}/usr/share/applications/
-
-          # App icon (use source PNG)
           cp assets/icons/fima_icon_light.png \
              ${PKG}/usr/share/icons/hicolor/512x512/apps/fima.png
-
-          # Control file
           cp linux/packaging/control ${PKG}/DEBIAN/control
-
-          # Fix executable permissions inside the package
           chmod 755 ${PKG}/usr/lib/fima/fima
 
           dpkg-deb --build ${PKG}
           mv ${PKG}.deb fima-1.0.0.deb
 
-      # ── Upload artifacts ──────────────────────
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -93,18 +81,6 @@ jobs:
             fima-linux.zip
             fima-1.0.0.deb
           retention-days: 30
-
-      # ── Add to nightly release ────────────────
-      - name: Upload to nightly release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: nightly
-          name: "Nightly Build"
-          prerelease: true
-          body: "Automated daily build — ${{ github.run_id }}"
-          files: |
-            fima-linux.zip
-            fima-1.0.0.deb
 
   # ─────────────────────────────────────────────
   # Windows: portable zip + Inno Setup installer
@@ -149,7 +125,6 @@ jobs:
         run: Move-Item windows\dist\windows\fima-setup.exe fima-setup.exe
         shell: powershell
 
-      # ── Upload artifacts ──────────────────────
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -158,18 +133,6 @@ jobs:
             fima-windows.zip
             fima-setup.exe
           retention-days: 30
-
-      # ── Add to nightly release ────────────────
-      - name: Upload to nightly release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: nightly
-          name: "Nightly Build"
-          prerelease: true
-          body: "Automated daily build — ${{ github.run_id }}"
-          files: |
-            fima-windows.zip
-            fima-setup.exe
 
   # ─────────────────────────────────────────────
   # macOS: portable zip + DMG
@@ -220,7 +183,6 @@ jobs:
             "fima.dmg" \
             "build/macos/Build/Products/Release/"
 
-      # ── Upload artifacts ──────────────────────
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -230,14 +192,41 @@ jobs:
             fima.dmg
           retention-days: 30
 
-      # ── Add to nightly release ────────────────
-      - name: Upload to nightly release
+  # ─────────────────────────────────────────────
+  # Publish: single job — runs after all 3 builds
+  # succeed, uploads everything to nightly release
+  # in one API call (no race condition)
+  # ─────────────────────────────────────────────
+  publish-release:
+    name: Publish Nightly Release
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-windows, build-macos]
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Publish nightly release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: nightly
           name: "Nightly Build"
           prerelease: true
-          body: "Automated daily build — ${{ github.run_id }}"
+          body: |
+            Automated daily build — run ${{ github.run_id }}
+
+            | Platform | Portable | Installer |
+            |----------|----------|-----------|
+            | Linux    | `fima-linux.zip` | `fima-1.0.0.deb` |
+            | Windows  | `fima-windows.zip` | `fima-setup.exe` |
+            | macOS    | `fima-macos.zip` | `fima.dmg` |
           files: |
-            fima-macos.zip
-            fima.dmg
+            artifacts/fima-linux.zip
+            artifacts/fima-1.0.0.deb
+            artifacts/fima-windows.zip
+            artifacts/fima-setup.exe
+            artifacts/fima-macos.zip
+            artifacts/fima.dmg
