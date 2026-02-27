@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Fima
+Comment=Two panel file manager
+Exec=/usr/lib/fima/fima
+Icon=fima
+Type=Application
+Categories=Utility;FileManager;
+StartupNotify=true
+StartupWMClass=fima

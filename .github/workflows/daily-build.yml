@@ -1,0 +1,236 @@
+name: Daily Build
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # Every day at 02:00 UTC
+  workflow_dispatch:        # Manual trigger from GitHub UI
+
+permissions:
+  contents: write           # Needed to create/update the nightly release
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Linux: portable zip + .deb package
+  # ─────────────────────────────────────────────
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            libsecret-1-dev libjsoncpp-dev
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install Dart dependencies
+        run: flutter pub get
+
+      - name: Build Linux release
+        run: flutter build linux --release
+
+      # ── Portable zip ──────────────────────────
+      - name: Create portable zip
+        run: |
+          cd build/linux/x64/release
+          zip -r ../../../../fima-linux.zip bundle/
+
+      # ── .deb package ──────────────────────────
+      - name: Build .deb package
+        run: |
+          PKG=fima_1.0.0_amd64
+          mkdir -p ${PKG}/DEBIAN
+          mkdir -p ${PKG}/usr/lib/fima
+          mkdir -p ${PKG}/usr/bin
+          mkdir -p ${PKG}/usr/share/applications
+          mkdir -p ${PKG}/usr/share/icons/hicolor/512x512/apps
+
+          # Copy app bundle
+          cp -r build/linux/x64/release/bundle/. ${PKG}/usr/lib/fima/
+
+          # Symlink the executable so 'fima' is on PATH
+          ln -s /usr/lib/fima/fima ${PKG}/usr/bin/fima
+
+          # Desktop entry
+          cp linux/packaging/sk.spajdo.fima.desktop \
+             ${PKG}/usr/share/applications/
+
+          # App icon (use source PNG)
+          cp assets/icons/fima_icon_light.png \
+             ${PKG}/usr/share/icons/hicolor/512x512/apps/fima.png
+
+          # Control file
+          cp linux/packaging/control ${PKG}/DEBIAN/control
+
+          # Fix executable permissions inside the package
+          chmod 755 ${PKG}/usr/lib/fima/fima
+
+          dpkg-deb --build ${PKG}
+          mv ${PKG}.deb fima-1.0.0.deb
+
+      # ── Upload artifacts ──────────────────────
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-builds
+          path: |
+            fima-linux.zip
+            fima-1.0.0.deb
+          retention-days: 30
+
+      # ── Add to nightly release ────────────────
+      - name: Upload to nightly release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: "Nightly Build"
+          prerelease: true
+          body: "Automated daily build — ${{ github.run_id }}"
+          files: |
+            fima-linux.zip
+            fima-1.0.0.deb
+
+  # ─────────────────────────────────────────────
+  # Windows: portable zip + Inno Setup installer
+  # ─────────────────────────────────────────────
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install Dart dependencies
+        run: flutter pub get
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      # ── Portable zip ──────────────────────────
+      - name: Create portable zip
+        run: |
+          Compress-Archive `
+            -Path build\windows\x64\runner\Release\* `
+            -DestinationPath fima-windows.zip
+        shell: powershell
+
+      # ── Inno Setup installer ──────────────────
+      - name: Install Inno Setup
+        run: choco install innosetup --yes
+        shell: powershell
+
+      - name: Build installer
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\setup.iss
+        shell: powershell
+
+      - name: Rename installer
+        run: Move-Item windows\dist\windows\fima-setup.exe fima-setup.exe
+        shell: powershell
+
+      # ── Upload artifacts ──────────────────────
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-builds
+          path: |
+            fima-windows.zip
+            fima-setup.exe
+          retention-days: 30
+
+      # ── Add to nightly release ────────────────
+      - name: Upload to nightly release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: "Nightly Build"
+          prerelease: true
+          body: "Automated daily build — ${{ github.run_id }}"
+          files: |
+            fima-windows.zip
+            fima-setup.exe
+
+  # ─────────────────────────────────────────────
+  # macOS: portable zip + DMG
+  # ─────────────────────────────────────────────
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install Dart dependencies
+        run: flutter pub get
+
+      - name: Build macOS release
+        run: flutter build macos --release
+        env:
+          EXPANDED_CODE_SIGN_IDENTITY: ""
+          CODE_SIGNING_REQUIRED: "NO"
+          CODE_SIGNING_ALLOWED: "NO"
+
+      # ── Portable zip ──────────────────────────
+      - name: Create portable zip
+        run: |
+          cd build/macos/Build/Products/Release
+          zip -r ../../../../../fima-macos.zip fima.app
+
+      # ── DMG ───────────────────────────────────
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Build DMG
+        run: |
+          create-dmg \
+            --volname "Fima" \
+            --volicon "assets/icons/fima_icon_light.png" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "fima.app" 175 190 \
+            --hide-extension "fima.app" \
+            --app-drop-link 425 190 \
+            "fima.dmg" \
+            "build/macos/Build/Products/Release/"
+
+      # ── Upload artifacts ──────────────────────
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-builds
+          path: |
+            fima-macos.zip
+            fima.dmg
+          retention-days: 30
+
+      # ── Add to nightly release ────────────────
+      - name: Upload to nightly release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: "Nightly Build"
+          prerelease: true
+          body: "Automated daily build — ${{ github.run_id }}"
+          files: |
+            fima-macos.zip
+            fima.dmg

@@ -1,0 +1,12 @@
+Package: fima
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Depends: libgtk-3-0, libsecret-1-0, libjsoncpp25 | libjsoncpp24
+Maintainer: sk.spajdo.fima
+Homepage: https://github.com/spajdo/fima
+Description: Two panel file manager
+ Fima is a two-panel file manager built with Flutter. It supports
+ local file operations, SSH remote file systems, ZIP archive browsing,
+ a built-in terminal, and customizable keyboard shortcuts.
