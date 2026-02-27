@@ -158,15 +158,20 @@ class _MainScreenState extends ConsumerState<MainScreen> {
           onClose: () => ref.read(overlayProvider.notifier).close(),
         );
       case OverlayType.terminal:
+        final panelId = overlayState.isLeftPanel ? 'left' : 'right';
         overlayContent = BuiltInTerminalWidget(
           width: panelWidth,
           height: panelHeight,
           initialPath: overlayState.terminalPath ?? '',
           isLeftPanel: overlayState.isLeftPanel,
           onClose: () {
-            final panelId = overlayState.isLeftPanel ? 'left' : 'right';
             ref.read(overlayProvider.notifier).close();
             ref.read(panelStateProvider(panelId).notifier).refresh();
+          },
+          onDirectoryChanged: (newPath) {
+            ref
+                .read(panelStateProvider(panelId).notifier)
+                .loadPath(newPath, addToVisited: false);
           },
         );
       case OverlayType.none:

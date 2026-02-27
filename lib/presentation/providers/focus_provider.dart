@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 enum ActivePanel { left, right }
@@ -38,4 +39,11 @@ class FocusController extends StateNotifier<FocusState> {
 
 final focusProvider = StateNotifierProvider<FocusController, FocusState>((ref) {
   return FocusController();
+});
+
+/// The [FocusNode] owned by [KeyboardHandler].
+/// Registering it here lets any widget return focus directly to the keyboard
+/// handler without walking the widget tree or leaving a focus gap.
+final keyboardHandlerFocusNodeProvider = Provider<FocusNode>((ref) {
+  return FocusNode(debugLabel: 'KeyboardHandler');
 });

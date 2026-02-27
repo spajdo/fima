@@ -5,8 +5,9 @@ import 'package:fima/domain/entity/workspace.dart';
 import 'package:fima/infrastructure/service/keyboard_utils.dart';
 import 'package:fima/infrastructure/service/linux_application_service.dart';
 import 'package:fima/infrastructure/service/system_clipboard_service.dart';
-import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
+import 'package:fima/presentation/providers/file_system_provider.dart';
+
 import 'package:fima/presentation/providers/internal_clipboard_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
@@ -95,7 +96,9 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
 
   @override
   Widget build(BuildContext context) {
+    final keyboardFocusNode = ref.watch(keyboardHandlerFocusNodeProvider);
     return Focus(
+      focusNode: keyboardFocusNode,
       autofocus: true,
       onKeyEvent: (node, event) {
         final isNavigationKey =

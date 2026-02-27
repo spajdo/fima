@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -16,6 +17,10 @@ class BuiltInTerminalWidget extends ConsumerStatefulWidget {
   final bool isLeftPanel;
   final VoidCallback onClose;
 
+  /// Called whenever the terminal's current working directory changes.
+  /// Receives the new absolute path as a [String].
+  final void Function(String path)? onDirectoryChanged;
+
   const BuiltInTerminalWidget({
     super.key,
     required this.width,
@@ -23,6 +28,7 @@ class BuiltInTerminalWidget extends ConsumerStatefulWidget {
     required this.initialPath,
     required this.isLeftPanel,
     required this.onClose,
+    this.onDirectoryChanged,
   });
 
   @override
@@ -37,19 +43,47 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
   Pty? _pty;
   bool _ptyStarted = false;
 
+  /// The last CWD we reported to [widget.onDirectoryChanged].
+  String _lastKnownCwd = '';
+
+  /// Fallback polling timer for shells that do not emit OSC 7.
+  Timer? _cwdPollTimer;
+
   @override
   void initState() {
     super.initState();
     _focusNode = FocusNode();
     _keyListenerFocusNode = FocusNode();
-    _terminal = Terminal(maxLines: 10000);
+    _lastKnownCwd = widget.initialPath;
+
+    // Create terminal with OSC 7 handler (primary CWD detection).
+    _terminal = Terminal(maxLines: 10000, onPrivateOSC: _handleOsc);
+
     _startPty();
 
-    // Grab Flutter focus initially (on first frame after build)
+    // Grab Flutter focus initially (on first frame after build).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
     });
   }
+
+  // ── OSC 7 handler ─────────────────────────────────────────────────────────
+
+  /// Called by xterm for every unrecognized / private OSC sequence.
+  /// OSC 7 format: `ESC ] 7 ; file:///path BEL`
+  void _handleOsc(String code, List<String> args) {
+    if (code != '7' || args.isEmpty) return;
+    final uri = Uri.tryParse(args.first);
+    if (uri == null) return;
+    try {
+      final path = uri.toFilePath();
+      _onCwdChanged(path);
+    } catch (_) {
+      // Ignore malformed URIs.
+    }
+  }
+
+  // ── Polling fallback ───────────────────────────────────────────────────────
 
   String _shellExecutable() {
     if (Platform.isWindows) return 'cmd.exe';
@@ -84,13 +118,95 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
       _terminal.onResize = (w, h, pw, ph) => _pty!.resize(h, w);
 
       setState(() => _ptyStarted = true);
+
+      // Start fallback polling after the PTY is ready.
+      _startCwdPolling();
     } catch (e) {
       _terminal.write('Error starting terminal: $e\r\n');
       setState(() => _ptyStarted = true);
     }
   }
 
-  // Returns true when the active Riverpod panel matches this terminal's panel.
+  /// Starts a 1-second timer that polls the OS for the PTY child's CWD.
+  /// On shells that emit OSC 7 (zsh, fish, bash 5.1+, pwsh) this timer
+  /// fires but immediately returns because [_lastKnownCwd] is already
+  /// up to date, so it has virtually zero overhead in practice.
+  void _startCwdPolling() {
+    _cwdPollTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _pollCwd();
+    });
+  }
+
+  /// Queries the OS for the current working directory of the PTY process.
+  Future<void> _pollCwd() async {
+    if (_pty == null) return;
+    final pid = _pty!.pid;
+
+    try {
+      String? resolved;
+
+      if (Platform.isLinux) {
+        // Fast path: read the /proc symlink — no subprocess required.
+        resolved = await Link('/proc/$pid/cwd').resolveSymbolicLinks();
+      } else if (Platform.isMacOS) {
+        // lsof reports the CWD of the child shell process.
+        final result = await Process.run('/bin/sh', [
+          '-c',
+          'lsof -a -p $pid -d cwd -Fn 2>/dev/null | grep "^n" | head -1',
+        ]);
+        final stdout = (result.stdout as String).trim();
+        if (stdout.startsWith('n')) {
+          resolved = stdout.substring(1);
+        }
+      } else if (Platform.isWindows) {
+        // wmic reliably returns the WorkingDirectory for any process.
+        final result = await Process.run('wmic', [
+          'process',
+          'where',
+          'processid=$pid',
+          'get',
+          'WorkingDirectory',
+          '/format:list',
+        ], runInShell: true);
+        final stdout = result.stdout as String;
+        for (final line in stdout.split('\n')) {
+          final trimmed = line.trim();
+          if (trimmed.startsWith('WorkingDirectory=')) {
+            resolved = trimmed.substring('WorkingDirectory='.length).trim();
+            // Remove trailing backslash except for drive roots (e.g. C:\).
+            if (resolved.length > 3 && resolved.endsWith('\\')) {
+              resolved = resolved.substring(0, resolved.length - 1);
+            }
+            break;
+          }
+        }
+      }
+
+      if (resolved != null && resolved.isNotEmpty) {
+        _onCwdChanged(resolved);
+      }
+    } catch (_) {
+      // Polling is best-effort; ignore errors silently.
+    }
+  }
+
+  // ── Common CWD change handler ──────────────────────────────────────────────
+
+  /// Called from both OSC 7 and the polling fallback.
+  /// De-duplicates changes and notifies the parent widget.
+  void _onCwdChanged(String newPath) {
+    if (newPath == _lastKnownCwd) return;
+    _lastKnownCwd = newPath;
+
+    // Update the toolbar label.
+    if (mounted) setState(() {});
+
+    widget.onDirectoryChanged?.call(newPath);
+  }
+
+  // ── Focus helpers ──────────────────────────────────────────────────────────
+
+  /// Returns true when the active Riverpod panel matches this terminal's panel.
   bool _terminalPanelIsActive(FocusState focusState) {
     return widget.isLeftPanel
         ? focusState.activePanel == ActivePanel.left
@@ -99,6 +215,7 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
 
   @override
   void dispose() {
+    _cwdPollTimer?.cancel();
     _pty?.kill();
     _focusNode.dispose();
     _keyListenerFocusNode.dispose();
@@ -142,19 +259,23 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
     final theme = Theme.of(context);
 
     // ── Focus management ───────────────────────────────────────────────────
-    // Listen to panel focus changes so that switching to the opposite panel
-    // explicitly moves Flutter focus away from TerminalView.  Without this
-    // TerminalView would keep consuming ALL key events regardless of which
-    // Riverpod panel is considered "active".
+    // When the user switches to the opposite panel we must hand focus
+    // explicitly to the KeyboardHandler's Focus node.  Simply calling
+    // _focusNode.unfocus() is not enough — Flutter's unfocus() can fire
+    // one frame *after* FilePanel's requestFocus(), overwriting it and
+    // leaving no focused node (which manifests as the first keypress being
+    // swallowed).  By calling requestFocus() on the shared KeyboardHandler
+    // node we guarantee a clean, race-free handoff.
+    final keyboardFocusNode = ref.read(keyboardHandlerFocusNodeProvider);
     ref.listen<FocusState>(focusProvider, (previous, next) {
       if (!mounted) return;
       if (_terminalPanelIsActive(next)) {
         // User switched back to our panel → grab focus.
         _focusNode.requestFocus();
       } else {
-        // User switched to the opposite panel → release focus so the
-        // KeyboardHandler's Focus widget can handle key events.
-        _focusNode.unfocus();
+        // User switched to the opposite panel → hand focus directly to the
+        // KeyboardHandler so there is no focus gap.
+        keyboardFocusNode.requestFocus();
       }
     });
 
@@ -192,7 +313,8 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      'Terminal — ${widget.initialPath}',
+                      // Show the live CWD rather than the static initial path.
+                      'Terminal — $_lastKnownCwd',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: fimaTheme.textColor,
                         fontSize: 12,
