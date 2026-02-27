@@ -187,26 +187,37 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
           }
         }
 
-        // Check for custom keyboard shortcuts
-        // Skip if QuickFilter is active (let quick filter handling take priority)
+        // Check for custom keyboard shortcuts.
+        // When quick filter is active, only navigation actions are allowed through;
+        // all other shortcuts remain blocked so typed characters keep feeding the filter.
+        const quickFilterPassthroughActions = {
+          'enterDirectory',
+          'navigateParent',
+          'switchPanel',
+          'clearFilter',
+          'clearQuickFilter',
+        };
         final currentShortcut = KeyboardUtils.buildShortcutString(event);
-        if (currentShortcut.isNotEmpty &&
-            currentPanelState.quickFilterText.isEmpty) {
+        if (currentShortcut.isNotEmpty) {
           final actionId = ref
               .read(userSettingsProvider.notifier)
               .findActionByShortcut(currentShortcut);
           if (actionId != null) {
-            final result = _handleCustomShortcut(
-              ref,
-              context,
-              actionId,
-              activePanelId,
-              panelController,
-              currentPanelState,
-              currentShortcut,
-            );
-            if (result != null) {
-              return result;
+            final filterActive = currentPanelState.quickFilterText.isNotEmpty;
+            if (!filterActive ||
+                quickFilterPassthroughActions.contains(actionId)) {
+              final result = _handleCustomShortcut(
+                ref,
+                context,
+                actionId,
+                activePanelId,
+                panelController,
+                currentPanelState,
+                currentShortcut,
+              );
+              if (result != null) {
+                return result;
+              }
             }
           }
         }
