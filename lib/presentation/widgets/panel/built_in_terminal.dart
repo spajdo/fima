@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fima/presentation/providers/focus_provider.dart';
+import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -86,7 +87,7 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
   // ── Polling fallback ───────────────────────────────────────────────────────
 
   String _shellExecutable() {
-    if (Platform.isWindows) return 'cmd.exe';
+    if (Platform.isWindows) return 'powershell.exe';
     return Platform.environment['SHELL'] ?? 'bash';
   }
 
@@ -343,7 +344,11 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
                   ? TerminalView(
                       _terminal,
                       focusNode: _focusNode,
-                      autofocus: false,
+                      autofocus: true,
+                      textStyle: TerminalStyle(
+                        fontFamily: 'monospace',
+                        fontSize: ref.read(userSettingsProvider).fontSize,
+                      ),
                       backgroundOpacity: 1.0,
                       theme: TerminalTheme(
                         cursor: fimaTheme.accentColor,
