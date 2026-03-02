@@ -45,12 +45,20 @@ class KeyMapActionDefs {
       omniPanelOrder: 1,
     ),
     KeyMapAction(
+      id: 'filePreview',
+      label: 'File Preview',
+      defaultShortcutLinux: 'F3',
+      defaultShortcutMacOS: 'F3',
+      showInOmniPanel: true,
+      omniPanelOrder: 2,
+    ),
+    KeyMapAction(
       id: 'openTerminal',
       label: 'Open Terminal',
       defaultShortcutLinux: 'F9',
       defaultShortcutMacOS: 'F9',
       showInOmniPanel: true,
-      omniPanelOrder: 2,
+      omniPanelOrder: 3,
     ),
     KeyMapAction(
       id: 'copyOperation',
@@ -58,7 +66,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'F5',
       defaultShortcutMacOS: 'F5',
       showInOmniPanel: true,
-      omniPanelOrder: 3,
+      omniPanelOrder: 4,
     ),
     KeyMapAction(
       id: 'moveOperation',
@@ -66,7 +74,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'F6',
       defaultShortcutMacOS: 'F6',
       showInOmniPanel: true,
-      omniPanelOrder: 4,
+      omniPanelOrder: 5,
     ),
     KeyMapAction(
       id: 'rename',
@@ -74,7 +82,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'F2',
       defaultShortcutMacOS: 'F2',
       showInOmniPanel: true,
-      omniPanelOrder: 5,
+      omniPanelOrder: 6,
     ),
     KeyMapAction(
       id: 'createDirectory',
@@ -82,7 +90,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'F7',
       defaultShortcutMacOS: 'F7',
       showInOmniPanel: true,
-      omniPanelOrder: 6,
+      omniPanelOrder: 7,
     ),
     KeyMapAction(
       id: 'createFile',
@@ -90,7 +98,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'F8',
       defaultShortcutMacOS: 'F8',
       showInOmniPanel: true,
-      omniPanelOrder: 7,
+      omniPanelOrder: 8,
     ),
     KeyMapAction(
       id: 'openWith',
@@ -98,7 +106,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'F4',
       defaultShortcutMacOS: 'F4',
       showInOmniPanel: true,
-      omniPanelOrder: 8,
+      omniPanelOrder: 9,
     ),
     KeyMapAction(
       id: 'openDefaultManager',
@@ -106,7 +114,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'F10',
       defaultShortcutMacOS: 'F10',
       showInOmniPanel: true,
-      omniPanelOrder: 9,
+      omniPanelOrder: 10,
     ),
     KeyMapAction(
       id: 'saveWorkspace',
@@ -114,7 +122,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+Shift+S',
       defaultShortcutMacOS: '⌘ + ⇧ + S',
       showInOmniPanel: true,
-      omniPanelOrder: 10,
+      omniPanelOrder: 11,
     ),
     KeyMapAction(
       id: 'deleteToTrash',
@@ -122,7 +130,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Delete',
       defaultShortcutMacOS: 'Delete',
       showInOmniPanel: true,
-      omniPanelOrder: 11,
+      omniPanelOrder: 12,
     ),
     KeyMapAction(
       id: 'permanentDelete',
@@ -130,7 +138,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Shift+Delete',
       defaultShortcutMacOS: '⇧ + Delete',
       showInOmniPanel: true,
-      omniPanelOrder: 12,
+      omniPanelOrder: 13,
     ),
     KeyMapAction(
       id: 'toggleHiddenFiles',
@@ -138,7 +146,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+H',
       defaultShortcutMacOS: '⌘ + H',
       showInOmniPanel: true,
-      omniPanelOrder: 13,
+      omniPanelOrder: 14,
     ),
     KeyMapAction(
       id: 'copyToClipboard',
@@ -146,7 +154,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+C',
       defaultShortcutMacOS: '⌘ + C',
       showInOmniPanel: true,
-      omniPanelOrder: 14,
+      omniPanelOrder: 15,
     ),
     KeyMapAction(
       id: 'cutToClipboard',
@@ -154,7 +162,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+X',
       defaultShortcutMacOS: '⌘ + X',
       showInOmniPanel: true,
-      omniPanelOrder: 15,
+      omniPanelOrder: 16,
     ),
     KeyMapAction(
       id: 'pasteFromClipboard',
@@ -162,7 +170,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+V',
       defaultShortcutMacOS: '⌘ + V',
       showInOmniPanel: true,
-      omniPanelOrder: 16,
+      omniPanelOrder: 17,
     ),
     KeyMapAction(
       id: 'selectAll',
@@ -170,7 +178,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+A',
       defaultShortcutMacOS: '⌘ + A',
       showInOmniPanel: true,
-      omniPanelOrder: 17,
+      omniPanelOrder: 18,
     ),
     KeyMapAction(
       id: 'deselectAll',
@@ -178,7 +186,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+D',
       defaultShortcutMacOS: '⌘ + D',
       showInOmniPanel: true,
-      omniPanelOrder: 18,
+      omniPanelOrder: 19,
     ),
     KeyMapAction(
       id: 'jumpToTop',
@@ -186,7 +194,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Arrow Left',
       defaultShortcutMacOS: 'Arrow Left',
       showInOmniPanel: true,
-      omniPanelOrder: 19,
+      omniPanelOrder: 20,
     ),
     KeyMapAction(
       id: 'jumpToBottom',
@@ -194,7 +202,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Arrow Right',
       defaultShortcutMacOS: 'Arrow Right',
       showInOmniPanel: true,
-      omniPanelOrder: 20,
+      omniPanelOrder: 21,
     ),
     KeyMapAction(
       id: 'clearQuickFilter',
@@ -202,7 +210,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+Backspace',
       defaultShortcutMacOS: '⌘ + Backspace',
       showInOmniPanel: true,
-      omniPanelOrder: 21,
+      omniPanelOrder: 22,
     ),
     KeyMapAction(
       id: 'workspaceDialog',
@@ -210,7 +218,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+W',
       defaultShortcutMacOS: '⌘ + W',
       showInOmniPanel: true,
-      omniPanelOrder: 22,
+      omniPanelOrder: 23,
     ),
     KeyMapAction(
       id: 'settings',
@@ -218,7 +226,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+Alt+S',
       defaultShortcutMacOS: '⌘ + ,',
       showInOmniPanel: true,
-      omniPanelOrder: 23,
+      omniPanelOrder: 24,
     ),
     KeyMapAction(
       id: 'moveUp',
@@ -310,7 +318,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+Alt+Z',
       defaultShortcutMacOS: '⌘ + ⌥ + Z',
       showInOmniPanel: true,
-      omniPanelOrder: 24,
+      omniPanelOrder: 25,
     ),
     KeyMapAction(
       id: 'connectToServer',
@@ -318,7 +326,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+Shift+R',
       defaultShortcutMacOS: '⌘ + ⇧ + R',
       showInOmniPanel: true,
-      omniPanelOrder: 25,
+      omniPanelOrder: 26,
     ),
     KeyMapAction(
       id: 'remoteDialog',
@@ -326,7 +334,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+R',
       defaultShortcutMacOS: '⌘ + R',
       showInOmniPanel: true,
-      omniPanelOrder: 26,
+      omniPanelOrder: 27,
     ),
   ];
 

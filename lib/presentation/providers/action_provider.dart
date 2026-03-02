@@ -10,6 +10,7 @@ import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart';
 import 'package:fima/presentation/widgets/popups/connect_server_dialog.dart';
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
+import 'package:fima/presentation/widgets/popups/file_preview_dialog.dart';
 import 'package:fima/presentation/widgets/popups/omni_dialog.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
 import 'package:flutter/material.dart';
@@ -114,6 +115,9 @@ class ActionGenerator {
         break;
       case 'extractToOpposite':
         _extractZip(activePanelId, panelController, extractToOpposite: true);
+        break;
+      case 'filePreview':
+        _showFilePreview(activePanelId, context);
         break;
       case 'compress':
         _compressItems(activePanelId, panelController, context);
@@ -367,6 +371,21 @@ class ActionGenerator {
         panelController.extractArchive(item.path, destinationPath).then((_) {
           refreshController.refresh();
         });
+      }
+    }
+  }
+
+  void _showFilePreview(String activePanelId, BuildContext context) {
+    final panelState = ref.read(panelStateProvider(activePanelId));
+    if (panelState.focusedIndex >= 0 &&
+        panelState.focusedIndex < panelState.items.length) {
+      final item = panelState.items[panelState.focusedIndex];
+      if (!item.isDirectory && !item.isParentDetails) {
+        showDialog(
+          context: context,
+          barrierColor: Colors.black54,
+          builder: (context) => FilePreviewDialog(fileItem: item),
+        );
       }
     }
   }

@@ -15,6 +15,7 @@ import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart';
 import 'package:fima/presentation/widgets/popups/connect_server_dialog.dart';
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
+import 'package:fima/presentation/widgets/popups/file_preview_dialog.dart';
 import 'package:fima/presentation/widgets/popups/omni_dialog.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
 import 'dart:async';
@@ -770,6 +771,9 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
           });
         }
         return KeyEventResult.handled;
+      case 'filePreview':
+        _showFilePreviewDialog(context, ref, activePanelId);
+        return KeyEventResult.handled;
       default:
         return null;
     }
@@ -802,6 +806,25 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
               .deleteSelectedItems(permanent: permanent);
         }
       });
+    }
+  }
+
+  void _showFilePreviewDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String activePanelId,
+  ) {
+    final panelState = ref.read(panelStateProvider(activePanelId));
+    if (panelState.focusedIndex >= 0 &&
+        panelState.focusedIndex < panelState.items.length) {
+      final item = panelState.items[panelState.focusedIndex];
+      if (!item.isDirectory && !item.isParentDetails) {
+        showDialog(
+          context: context,
+          barrierColor: Colors.black54,
+          builder: (context) => FilePreviewDialog(fileItem: item),
+        );
+      }
     }
   }
 

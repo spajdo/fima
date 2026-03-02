@@ -1,0 +1,46 @@
+# File Preview Feature Implementation Plan
+
+We are adding a new action "File preview" bound to the `F3` shortcut. It will open a scrollable, read-only but selectable text popup for readable files (like text, code, JSON, XML).
+
+## Proposed Changes
+
+### Configuration & Dispatching
+#### [MODIFY] [lib/domain/entity/key_map_action.dart](file:///Users/misotech/Projects/Private/Flutter/fima/lib/domain/entity/key_map_action.dart)
+- Add a new [KeyMapAction](file:///Users/misotech/Projects/Private/Flutter/fima/lib/domain/entity/key_map_action.dart#3-36) entry to `KeyMapActionDefs.all` for `filePreview` with default shortcut `F3` (for both Linux and macOS).
+- Ensure it does *not* show in the omni panel or give it an appropriate label if deciding to show it.
+
+#### [MODIFY] [lib/presentation/providers/action_provider.dart](file:///Users/misotech/Projects/Private/Flutter/fima/lib/presentation/providers/action_provider.dart)
+- In [_executeAction](file:///Users/misotech/Projects/Private/Flutter/fima/lib/presentation/providers/action_provider.dart#104-248), add the `filePreview` case to trigger the logic to open the preview dialog.
+- The logic will get the currently focused item and ensure it is not a directory.
+
+#### [MODIFY] [lib/presentation/widgets/keyboard_handler.dart](file:///Users/misotech/Projects/Private/Flutter/fima/lib/presentation/widgets/keyboard_handler.dart)
+- Add `'filePreview'` to the switch statement in [_handleCustomShortcut](file:///Users/misotech/Projects/Private/Flutter/fima/lib/presentation/widgets/keyboard_handler.dart#587-777) to handle the action being triggered from the keyboard.
+
+### UI & Core Logic
+#### [NEW] `lib/presentation/widgets/popups/file_preview_dialog.dart`
+- Create a `FilePreviewDialog` Stateful Widget.
+- **Logic**:
+  - Check if the file is readable as text. We will read the first chunk of the file and check for null bytes (`\x00`). If null bytes are found, it's considered binary and the preview will display "Unsupported file format" or we can simply not open the preview.
+  - To ensure performance, we will cap the text read to a reasonable limit (e.g. 500KB or 1MB) because a huge `SelectableText` widget in Flutter can cause severe frame drops.
+- **UI**:
+  - A modal dialog ([Dialog](file:///Users/misotech/Projects/Private/Flutter/fima/lib/presentation/widgets/popups/key_map_tab.dart#271-297) widget) with constraints (e.g. max width/height to cover most of the screen).
+  - Use `SingleChildScrollView` with a `Scrollbar`.
+  - Content should use `SelectableText` to allow the user to highlight and copy the text.
+  - Wrap the dialog contents or the whole dialog in a `Focus` node with `autofocus: true` and `onKeyEvent` catching the `Escape` key to call `Navigator.of(context).pop()`.
+
+## Verification Plan
+
+### Automated Tests
+*No new automated tests are proposed as the app heavily relies on integration/manual testing for UI features at the moment.*
+
+### Manual Verification
+1. Build and run the app.
+2. Navigate the file panel to a location with various folders and files.
+3. Focus a **Folder** and press `F3`: Verify that nothing happens.
+4. Focus a **Text file** (e.g., [.dart](file:///Users/misotech/Projects/Private/Flutter/fima/lib/domain/entity/app_action.dart), `.json`, `.txt`) and press `F3`: 
+   - Verify a popup opens displaying the file's content.
+   - Verify it is read-only but you can highlight and copy portions of the text.
+   - Scroll down to verify the scrollbar is present.
+   - Press `Esc` and verify the popup closes.
+5. Focus a **Binary file** or unsupported format (e.g., an image or compiled executable) and press `F3`:
+   - Verify the popup informs the user the format is unsupported, or shows "File too large/binary".
