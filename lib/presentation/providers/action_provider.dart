@@ -1,5 +1,6 @@
 import 'package:fima/domain/entity/app_action.dart';
 import 'package:fima/domain/entity/key_map_action.dart';
+import 'package:fima/domain/entity/workspace.dart';
 import 'package:fima/infrastructure/service/linux_application_service.dart';
 import 'package:fima/infrastructure/service/system_clipboard_service.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
@@ -247,6 +248,19 @@ class ActionGenerator {
           builder: (context) => const OmniDialog(initialText: 'r '),
         );
         break;
+      case 'saveWorkspace':
+        _showSaveWorkspaceDialog();
+        break;
+      case 'workspaceDialog':
+        showDialog(
+          context: context,
+          barrierColor: Colors.transparent,
+          builder: (context) => const OmniDialog(initialText: 'w '),
+        );
+        break;
+      case 'clearQuickFilter':
+        panelController.clearQuickFilter();
+        break;
     }
   }
 
@@ -439,5 +453,29 @@ class ActionGenerator {
         }
       });
     }
+  }
+
+  void _showSaveWorkspaceDialog() {
+    final leftState = ref.read(panelStateProvider('left'));
+    final rightState = ref.read(panelStateProvider('right'));
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.transparent,
+      builder: (context) => const TextInputDialog(
+        title: 'Save Workspace',
+        label: 'Workspace Name',
+        okButtonLabel: 'Save',
+      ),
+    ).then((name) {
+      if (name != null && name.toString().isNotEmpty) {
+        final workspace = Workspace(
+          name: name.toString(),
+          leftPanelPath: leftState.currentPath,
+          rightPanelPath: rightState.currentPath,
+        );
+        ref.read(userSettingsProvider.notifier).addWorkspace(workspace);
+      }
+    });
   }
 }

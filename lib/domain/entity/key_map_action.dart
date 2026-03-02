@@ -214,7 +214,7 @@ class KeyMapActionDefs {
     ),
     KeyMapAction(
       id: 'workspaceDialog',
-      label: 'Workspace Dialog',
+      label: 'Workspaces',
       defaultShortcutLinux: 'Ctrl+W',
       defaultShortcutMacOS: '⌘ + W',
       showInOmniPanel: true,
