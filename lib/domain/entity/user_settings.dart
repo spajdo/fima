@@ -24,6 +24,7 @@ class UserSettings {
   final bool leftPanelSortAscending;
   final int rightPanelSortColumn;
   final bool rightPanelSortAscending;
+  final bool showWalkthroughOnStartup;
 
   const UserSettings({
     required this.leftPanelPath,
@@ -47,6 +48,7 @@ class UserSettings {
     this.leftPanelSortAscending = true,
     this.rightPanelSortColumn = 0,
     this.rightPanelSortAscending = true,
+    this.showWalkthroughOnStartup = true,
   });
 
   // Default settings
@@ -73,6 +75,7 @@ class UserSettings {
       leftPanelSortAscending: true,
       rightPanelSortColumn: 0,
       rightPanelSortAscending: true,
+      showWalkthroughOnStartup: true,
     );
   }
 
@@ -110,6 +113,8 @@ class UserSettings {
       leftPanelSortAscending: json['leftPanelSortAscending'] as bool? ?? true,
       rightPanelSortColumn: json['rightPanelSortColumn'] as int? ?? 0,
       rightPanelSortAscending: json['rightPanelSortAscending'] as bool? ?? true,
+      showWalkthroughOnStartup:
+          json['showWalkthroughOnStartup'] as bool? ?? true,
     );
   }
 
@@ -137,6 +142,7 @@ class UserSettings {
       'leftPanelSortAscending': leftPanelSortAscending,
       'rightPanelSortColumn': rightPanelSortColumn,
       'rightPanelSortAscending': rightPanelSortAscending,
+      'showWalkthroughOnStartup': showWalkthroughOnStartup,
     };
   }
 
@@ -163,6 +169,7 @@ class UserSettings {
     bool? leftPanelSortAscending,
     int? rightPanelSortColumn,
     bool? rightPanelSortAscending,
+    bool? showWalkthroughOnStartup,
   }) {
     return UserSettings(
       leftPanelPath: leftPanelPath ?? this.leftPanelPath,
@@ -188,6 +195,8 @@ class UserSettings {
       rightPanelSortColumn: rightPanelSortColumn ?? this.rightPanelSortColumn,
       rightPanelSortAscending:
           rightPanelSortAscending ?? this.rightPanelSortAscending,
+      showWalkthroughOnStartup:
+          showWalkthroughOnStartup ?? this.showWalkthroughOnStartup,
     );
   }
 }

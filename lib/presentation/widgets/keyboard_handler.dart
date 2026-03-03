@@ -17,6 +17,7 @@ import 'package:fima/presentation/widgets/popups/connect_server_dialog.dart';
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
 import 'package:fima/presentation/widgets/popups/file_preview_dialog.dart';
 import 'package:fima/presentation/widgets/popups/omni_dialog.dart';
+import 'package:fima/presentation/widgets/popups/shortcuts_dialog.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
 import 'dart:async';
 
@@ -204,6 +205,21 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
               .read(userSettingsProvider.notifier)
               .findActionByShortcut(currentShortcut);
           if (actionId != null) {
+            // Some actions should be globally processed regardless of quick filter
+            // e.g., showShortcuts (F1)
+            if (actionId == 'showShortcuts') {
+              _handleCustomShortcut(
+                ref,
+                context,
+                actionId,
+                activePanelId,
+                panelController,
+                currentPanelState,
+                currentShortcut,
+              );
+              return KeyEventResult.handled;
+            }
+
             final filterActive = currentPanelState.quickFilterText.isNotEmpty;
             if (!filterActive ||
                 quickFilterPassthroughActions.contains(actionId)) {
@@ -745,6 +761,13 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         if (currentPanelState.quickFilterText.isNotEmpty) {
           panelController.clearQuickFilter();
         }
+        return KeyEventResult.handled;
+      case 'showShortcuts':
+        showDialog(
+          context: context,
+          barrierColor: Colors.black54,
+          builder: (context) => const ShortcutsDialog(),
+        );
         return KeyEventResult.handled;
       case 'copyPath':
         _copyPathToClipboard(ref, activePanelId);

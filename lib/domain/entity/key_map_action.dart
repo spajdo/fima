@@ -37,6 +37,27 @@ class KeyMapAction {
 class KeyMapActionDefs {
   static const List<KeyMapAction> all = [
     KeyMapAction(
+      id: 'showShortcuts',
+      label: 'Show All Shortcuts',
+      defaultShortcutLinux: 'F1',
+      defaultShortcutMacOS: 'F1',
+      isEditable: false,
+    ),
+    KeyMapAction(
+      id: 'omniPanelPaths',
+      label: 'Jump to folder',
+      defaultShortcutLinux: 'Ctrl+P',
+      defaultShortcutMacOS: '⌘ + P',
+      isEditable: false,
+    ),
+    KeyMapAction(
+      id: 'omniPanelActions',
+      label: 'Actions',
+      defaultShortcutLinux: 'Ctrl+Shift+P',
+      defaultShortcutMacOS: '⌘ + ⇧ + P',
+      isEditable: false,
+    ),
+    KeyMapAction(
       id: 'copyPath',
       label: 'Copy Path',
       defaultShortcutLinux: 'Ctrl+Shift+C',
@@ -283,20 +304,6 @@ class KeyMapActionDefs {
       label: 'Clear Filter',
       defaultShortcutLinux: 'Escape',
       defaultShortcutMacOS: 'Escape',
-    ),
-    KeyMapAction(
-      id: 'omniPanelPaths',
-      label: 'Omni Panel (Paths)',
-      defaultShortcutLinux: 'Ctrl+P',
-      defaultShortcutMacOS: '⌘ + P',
-      isEditable: false,
-    ),
-    KeyMapAction(
-      id: 'omniPanelActions',
-      label: 'Omni Panel (Actions)',
-      defaultShortcutLinux: 'Ctrl+Shift+P',
-      defaultShortcutMacOS: '⌘ + ⇧ + P',
-      isEditable: false,
     ),
     KeyMapAction(
       id: 'extractHere',

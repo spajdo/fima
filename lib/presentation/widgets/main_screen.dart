@@ -7,6 +7,7 @@ import 'package:fima/presentation/widgets/bottom_status_bar.dart';
 import 'package:fima/presentation/widgets/panel/built_in_terminal.dart';
 import 'package:fima/presentation/widgets/panel/file_panel.dart';
 import 'package:fima/presentation/widgets/popups/settings_dialog.dart';
+import 'package:fima/presentation/widgets/popups/walkthrough_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -37,6 +38,19 @@ class _MainScreenState extends ConsumerState<MainScreen> {
       _splitRatio = settings.panelSplitRatio;
       _settingsLoaded = true;
     });
+
+    if (settings.showWalkthroughOnStartup && mounted) {
+      // Delay slightly to ensure layout is complete before showing dialog
+      Future.delayed(Duration.zero, () {
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          barrierColor: Colors.black54,
+          barrierDismissible: false,
+          builder: (context) => const WalkthroughDialog(),
+        );
+      });
+    }
   }
 
   void _updateSplitRatio(double ratio) {

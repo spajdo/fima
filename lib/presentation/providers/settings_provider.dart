@@ -92,6 +92,14 @@ class SettingsController extends StateNotifier<UserSettings> {
     save(); // Auto-save
   }
 
+  /// Update show walkthrough setting
+  void setShowWalkthroughOnStartup(bool show) {
+    if (state.showWalkthroughOnStartup != show) {
+      state = state.copyWith(showWalkthroughOnStartup: show);
+      save(); // Auto-save
+    }
+  }
+
   /// Update max path indexes
   void setMaxPathIndexes(int count) {
     final newCount = count.clamp(10, 100);

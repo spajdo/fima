@@ -13,6 +13,7 @@ import 'package:fima/presentation/widgets/popups/connect_server_dialog.dart';
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
 import 'package:fima/presentation/widgets/popups/file_preview_dialog.dart';
 import 'package:fima/presentation/widgets/popups/omni_dialog.dart';
+import 'package:fima/presentation/widgets/popups/shortcuts_dialog.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -260,6 +261,13 @@ class ActionGenerator {
         break;
       case 'clearQuickFilter':
         panelController.clearQuickFilter();
+        break;
+      case 'showShortcuts':
+        showDialog(
+          context: context,
+          barrierColor: Colors.black54,
+          builder: (context) => const ShortcutsDialog(),
+        );
         break;
     }
   }

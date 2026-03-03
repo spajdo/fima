@@ -366,377 +366,385 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           }
         }
       },
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          _panelFocusNode.requestFocus(); // take Flutter focus from terminal
-          ref
-              .read(focusProvider.notifier)
-              .setActivePanel(
-                widget.panelId == 'left' ? ActivePanel.left : ActivePanel.right,
-              );
-        },
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: fimaTheme.borderColor),
-            color: fimaTheme.backgroundColor,
-          ),
-          child: Column(
-            children: [
-              // SSH header (shown only for SSH paths)
-              if (panelState.currentPath.startsWith('ssh://'))
-                _buildSshHeader(panelState, fimaTheme, theme, fontSize),
-              // Local path header
-              if (!panelState.currentPath.startsWith('ssh://'))
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  color: fimaTheme.surfaceColor,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: InkWell(
-                          onTap: () =>
-                              _showPathEditor(context, panelState.currentPath),
-                          child: Text(
-                            panelState.currentPath.isEmpty
-                                ? '...'
-                                : panelState.currentPath,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              fontSize: fontSize,
-                              color: fimaTheme.textColor,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.edit,
-                          size: fontSize + 2,
-                          color: fimaTheme.textColor,
-                        ),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        tooltip: 'Edit path',
-                        onPressed: () =>
-                            _showPathEditor(context, panelState.currentPath),
-                      ),
-                    ],
-                  ),
-                ),
-              // Column headers
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                color: fimaTheme.surfaceColor,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final iconWidth = fontSize + 10;
-                    final availableWidth =
-                        constraints.maxWidth - iconWidth - _splitterWidth * 2;
-                    final sizeWidth = availableWidth * _sizeWidthFraction;
-                    final modifiedWidth =
-                        availableWidth *
-                        (1.0 - _nameWidthFraction - _sizeWidthFraction);
-
-                    return Row(
+      child: Focus(
+        focusNode: _panelFocusNode,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            _panelFocusNode.requestFocus(); // take Flutter focus from terminal
+            ref
+                .read(focusProvider.notifier)
+                .setActivePanel(
+                  widget.panelId == 'left'
+                      ? ActivePanel.left
+                      : ActivePanel.right,
+                );
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: fimaTheme.borderColor),
+              color: fimaTheme.backgroundColor,
+            ),
+            child: Column(
+              children: [
+                // SSH header (shown only for SSH paths)
+                if (panelState.currentPath.startsWith('ssh://'))
+                  _buildSshHeader(panelState, fimaTheme, theme, fontSize),
+                // Local path header
+                if (!panelState.currentPath.startsWith('ssh://'))
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    color: fimaTheme.surfaceColor,
+                    child: Row(
                       children: [
-                        SizedBox(width: iconWidth), // Icon space
                         Expanded(
-                          child: _buildColumnHeader(
-                            'Name',
-                            SortColumn.name,
-                            panelState,
-                            fimaTheme,
-                            () => controller.sort(SortColumn.name),
+                          child: InkWell(
+                            onTap: () => _showPathEditor(
+                              context,
+                              panelState.currentPath,
+                            ),
+                            child: Text(
+                              panelState.currentPath.isEmpty
+                                  ? '...'
+                                  : panelState.currentPath,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontSize: fontSize,
+                                color: fimaTheme.textColor,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
-                        _buildSplitter(
-                          fimaTheme: fimaTheme,
-                          height: 32,
-                          totalWidth: availableWidth,
-                          onDrag: (delta, total) {
-                            setState(() {
-                              final deltaFraction = delta / total;
-                              final newName =
-                                  (_nameWidthFraction + deltaFraction).clamp(
-                                    _minColumnFraction,
-                                    1.0 -
-                                        _sizeWidthFraction -
-                                        _minColumnFraction,
-                                  );
-                              _nameWidthFraction = newName;
-                            });
-                          },
-                        ),
-                        SizedBox(
-                          width: sizeWidth,
-                          child: _buildColumnHeader(
-                            'Size',
-                            SortColumn.size,
-                            panelState,
-                            fimaTheme,
-                            () => controller.sort(SortColumn.size),
+                        IconButton(
+                          icon: Icon(
+                            Icons.edit,
+                            size: fontSize + 2,
+                            color: fimaTheme.textColor,
                           ),
-                        ),
-                        _buildSplitter(
-                          fimaTheme: fimaTheme,
-                          height: 32,
-                          totalWidth: availableWidth,
-                          onDrag: (delta, total) {
-                            setState(() {
-                              final deltaFraction = delta / total;
-                              final newSize =
-                                  (_sizeWidthFraction + deltaFraction).clamp(
-                                    _minColumnFraction,
-                                    1.0 -
-                                        _nameWidthFraction -
-                                        _minColumnFraction,
-                                  );
-                              _sizeWidthFraction = newSize;
-                            });
-                          },
-                        ),
-                        SizedBox(
-                          width: modifiedWidth,
-                          child: _buildColumnHeader(
-                            'Modified',
-                            SortColumn.modified,
-                            panelState,
-                            fimaTheme,
-                            () => controller.sort(SortColumn.modified),
-                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          tooltip: 'Edit path',
+                          onPressed: () =>
+                              _showPathEditor(context, panelState.currentPath),
                         ),
                       ],
-                    );
-                  },
-                ),
-              ),
-              // File list
-              Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    _panelFocusNode
-                        .requestFocus(); // take Flutter focus from terminal
-                    ref
-                        .read(focusProvider.notifier)
-                        .setActivePanel(
-                          widget.panelId == 'left'
-                              ? ActivePanel.left
-                              : ActivePanel.right,
-                        );
-                  },
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    itemExtent: itemHeight,
-                    itemCount: panelState.items.length,
-                    itemBuilder: (context, index) {
-                      final item = panelState.items[index];
-                      final isSelected = panelState.selectedItems.contains(
-                        item.path,
-                      );
-                      final isFocused = panelState.focusedIndex == index;
-                      final focusState = ref.watch(focusProvider);
-                      final isActivePanel =
-                          (widget.panelId == 'left' &&
-                              focusState.activePanel == ActivePanel.left) ||
-                          (widget.panelId == 'right' &&
-                              focusState.activePanel == ActivePanel.right);
+                    ),
+                  ),
+                // Column headers
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  color: fimaTheme.surfaceColor,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final iconWidth = fontSize + 10;
+                      final availableWidth =
+                          constraints.maxWidth - iconWidth - _splitterWidth * 2;
+                      final sizeWidth = availableWidth * _sizeWidthFraction;
+                      final modifiedWidth =
+                          availableWidth *
+                          (1.0 - _nameWidthFraction - _sizeWidthFraction);
 
-                      // Text color is red if selected (Marked), otherwise default
-                      final textColor = isSelected
-                          ? Colors.red
-                          : fimaTheme.textColor;
-
-                      return GestureDetector(
-                        onTapDown: (_) {
-                          _handleTapDown(index, item, controller);
-                        },
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? fimaTheme.selectedItemColor
-                                : isFocused && isActivePanel
-                                ? fimaTheme.focusedItemColor
-                                : fimaTheme.backgroundColor,
-                            border: isFocused && isActivePanel
-                                ? Border.all(
-                                    color: fimaTheme.accentColor,
-                                    width: 1,
-                                  )
-                                : null,
+                      return Row(
+                        children: [
+                          SizedBox(width: iconWidth), // Icon space
+                          Expanded(
+                            child: _buildColumnHeader(
+                              'Name',
+                              SortColumn.name,
+                              panelState,
+                              fimaTheme,
+                              () => controller.sort(SortColumn.name),
+                            ),
                           ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final iconWidth = fontSize + 10;
-                              final availableWidth =
-                                  constraints.maxWidth -
-                                  iconWidth -
-                                  _splitterWidth * 2;
-                              final sizeWidth =
-                                  availableWidth * _sizeWidthFraction;
-                              final modifiedWidth =
-                                  availableWidth *
-                                  (1.0 -
-                                      _nameWidthFraction -
-                                      _sizeWidthFraction);
-
-                              return Row(
-                                children: [
-                                  SizedBox(
-                                    width: iconWidth,
-                                    child: _buildFileIcon(item, fontSize + 2),
-                                  ),
-                                  Expanded(
-                                    child: item.path == panelState.editingPath
-                                        ? RenameField(
-                                            initialValue: item.name,
-                                            style: theme.textTheme.bodySmall
-                                                ?.copyWith(
-                                                  color: textColor,
-                                                  fontSize: fontSize,
-                                                ),
-                                            onSubmitted: (newName) {
-                                              controller.renameItem(newName);
-                                            },
-                                            onCancel: () {
-                                              controller.cancelRenaming();
-                                            },
-                                          )
-                                        : Text(
-                                            item.name,
-                                            style: theme.textTheme.bodySmall
-                                                ?.copyWith(
-                                                  color: textColor,
-                                                  fontSize: fontSize,
-                                                ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                  ),
-                                  SizedBox(width: _splitterWidth),
-                                  SizedBox(
-                                    width: sizeWidth,
-                                    child: Text(
-                                      item.isDirectory && !item.isParentDetails
-                                          ? '<DIR>'
-                                          : item.isParentDetails
-                                          ? ''
-                                          : _formatSize(item.size),
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(
-                                            color: textColor,
-                                            fontSize: fontSize,
-                                          ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  SizedBox(width: _splitterWidth),
-                                  SizedBox(
-                                    width: modifiedWidth,
-                                    child: Text(
-                                      item.isParentDetails
-                                          ? ''
-                                          : _dateFormat.format(item.modified),
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(
-                                            color: textColor,
-                                            fontSize: fontSize,
-                                          ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              );
+                          _buildSplitter(
+                            fimaTheme: fimaTheme,
+                            height: 32,
+                            totalWidth: availableWidth,
+                            onDrag: (delta, total) {
+                              setState(() {
+                                final deltaFraction = delta / total;
+                                final newName =
+                                    (_nameWidthFraction + deltaFraction).clamp(
+                                      _minColumnFraction,
+                                      1.0 -
+                                          _sizeWidthFraction -
+                                          _minColumnFraction,
+                                    );
+                                _nameWidthFraction = newName;
+                              });
                             },
                           ),
-                        ),
+                          SizedBox(
+                            width: sizeWidth,
+                            child: _buildColumnHeader(
+                              'Size',
+                              SortColumn.size,
+                              panelState,
+                              fimaTheme,
+                              () => controller.sort(SortColumn.size),
+                            ),
+                          ),
+                          _buildSplitter(
+                            fimaTheme: fimaTheme,
+                            height: 32,
+                            totalWidth: availableWidth,
+                            onDrag: (delta, total) {
+                              setState(() {
+                                final deltaFraction = delta / total;
+                                final newSize =
+                                    (_sizeWidthFraction + deltaFraction).clamp(
+                                      _minColumnFraction,
+                                      1.0 -
+                                          _nameWidthFraction -
+                                          _minColumnFraction,
+                                    );
+                                _sizeWidthFraction = newSize;
+                              });
+                            },
+                          ),
+                          SizedBox(
+                            width: modifiedWidth,
+                            child: _buildColumnHeader(
+                              'Modified',
+                              SortColumn.modified,
+                              panelState,
+                              fimaTheme,
+                              () => controller.sort(SortColumn.modified),
+                            ),
+                          ),
+                        ],
                       );
                     },
                   ),
                 ),
-              ),
-              // QuickFilter input box
-              if (panelState.quickFilterText.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: fimaTheme.surfaceColor,
-                    border: Border(
-                      top: BorderSide(color: fimaTheme.borderColor),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.search,
-                        size: fontSize + 2,
-                        color: fimaTheme.accentColor,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        panelState.quickFilterText,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontSize: fontSize,
-                          color: fimaTheme.textColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              // Operation Progress Bar
-              if (panelState.operationProgress != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: fimaTheme.surfaceColor,
-                    border: Border(
-                      top: BorderSide(color: fimaTheme.borderColor),
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${panelState.operationProgress!.operationName}: ${panelState.operationProgress!.currentItem}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontSize: fontSize - 1,
-                          color: fimaTheme.textColor,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: LinearProgressIndicator(
-                              value: panelState.operationProgress!.progress,
-                              minHeight: 2,
-                              backgroundColor: fimaTheme.surfaceColor,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                fimaTheme.accentColor,
-                              ),
+                // File list
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      _panelFocusNode
+                          .requestFocus(); // take Flutter focus from terminal
+                      ref
+                          .read(focusProvider.notifier)
+                          .setActivePanel(
+                            widget.panelId == 'left'
+                                ? ActivePanel.left
+                                : ActivePanel.right,
+                          );
+                    },
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      itemExtent: itemHeight,
+                      itemCount: panelState.items.length,
+                      itemBuilder: (context, index) {
+                        final item = panelState.items[index];
+                        final isSelected = panelState.selectedItems.contains(
+                          item.path,
+                        );
+                        final isFocused = panelState.focusedIndex == index;
+                        final focusState = ref.watch(focusProvider);
+                        final isActivePanel =
+                            (widget.panelId == 'left' &&
+                                focusState.activePanel == ActivePanel.left) ||
+                            (widget.panelId == 'right' &&
+                                focusState.activePanel == ActivePanel.right);
+
+                        // Text color is red if selected (Marked), otherwise default
+                        final textColor = isSelected
+                            ? Colors.red
+                            : fimaTheme.textColor;
+
+                        return GestureDetector(
+                          onTapDown: (_) {
+                            _handleTapDown(index, item, controller);
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? fimaTheme.selectedItemColor
+                                  : isFocused && isActivePanel
+                                  ? fimaTheme.focusedItemColor
+                                  : fimaTheme.backgroundColor,
+                              border: isFocused && isActivePanel
+                                  ? Border.all(
+                                      color: fimaTheme.accentColor,
+                                      width: 1,
+                                    )
+                                  : null,
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final iconWidth = fontSize + 10;
+                                final availableWidth =
+                                    constraints.maxWidth -
+                                    iconWidth -
+                                    _splitterWidth * 2;
+                                final sizeWidth =
+                                    availableWidth * _sizeWidthFraction;
+                                final modifiedWidth =
+                                    availableWidth *
+                                    (1.0 -
+                                        _nameWidthFraction -
+                                        _sizeWidthFraction);
+
+                                return Row(
+                                  children: [
+                                    SizedBox(
+                                      width: iconWidth,
+                                      child: _buildFileIcon(item, fontSize + 2),
+                                    ),
+                                    Expanded(
+                                      child: item.path == panelState.editingPath
+                                          ? RenameField(
+                                              initialValue: item.name,
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color: textColor,
+                                                    fontSize: fontSize,
+                                                  ),
+                                              onSubmitted: (newName) {
+                                                controller.renameItem(newName);
+                                              },
+                                              onCancel: () {
+                                                controller.cancelRenaming();
+                                              },
+                                            )
+                                          : Text(
+                                              item.name,
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color: textColor,
+                                                    fontSize: fontSize,
+                                                  ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                    ),
+                                    SizedBox(width: _splitterWidth),
+                                    SizedBox(
+                                      width: sizeWidth,
+                                      child: Text(
+                                        item.isDirectory &&
+                                                !item.isParentDetails
+                                            ? '<DIR>'
+                                            : item.isParentDetails
+                                            ? ''
+                                            : _formatSize(item.size),
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: textColor,
+                                              fontSize: fontSize,
+                                            ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    SizedBox(width: _splitterWidth),
+                                    SizedBox(
+                                      width: modifiedWidth,
+                                      child: Text(
+                                        item.isParentDetails
+                                            ? ''
+                                            : _dateFormat.format(item.modified),
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: textColor,
+                                              fontSize: fontSize,
+                                            ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
                             ),
                           ),
-                        ],
-                      ),
-                    ],
+                        );
+                      },
+                    ),
                   ),
                 ),
-            ],
+                // QuickFilter input box
+                if (panelState.quickFilterText.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: fimaTheme.surfaceColor,
+                      border: Border(
+                        top: BorderSide(color: fimaTheme.borderColor),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.search,
+                          size: fontSize + 2,
+                          color: fimaTheme.accentColor,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          panelState.quickFilterText,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: fontSize,
+                            color: fimaTheme.textColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                // Operation Progress Bar
+                if (panelState.operationProgress != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: fimaTheme.surfaceColor,
+                      border: Border(
+                        top: BorderSide(color: fimaTheme.borderColor),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${panelState.operationProgress!.operationName}: ${panelState.operationProgress!.currentItem}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: fontSize - 1,
+                            color: fimaTheme.textColor,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: LinearProgressIndicator(
+                                value: panelState.operationProgress!.progress,
+                                minHeight: 2,
+                                backgroundColor: fimaTheme.surfaceColor,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  fimaTheme.accentColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
