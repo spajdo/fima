@@ -68,16 +68,16 @@ dev_dependencies:
   flutter_launcher_icons: ^0.14.0
 
 flutter_launcher_icons:
-  image_path: "assets/icons/fima_icon_light.png"
+  image_path: "assets/icons/fima_icon_dark.png"
   macos:
     generate: true
-    image_path: "assets/icons/fima_icon_light.png"
+    image_path: "assets/icons/fima_icon_dark.png"
   windows:
     generate: true
-    image_path: "assets/icons/fima_icon_light.png"
+    image_path: "assets/icons/fima_icon_dark.png"
   linux:
     generate: true
-    image_path: "assets/icons/fima_icon_light.png"
+    image_path: "assets/icons/fima_icon_dark.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

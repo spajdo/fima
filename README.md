@@ -1,4 +1,8 @@
-# fima
+<p align="center">
+  <img src="assets/icons/SVG/fima-dark.svg" width="128" alt="Fima Logo" />
+</p>
+
+<h1 align="center">fima</h1>
 
 ![Fima Screenshot](screenshots/composite-theme.png)
 
@@ -11,6 +15,7 @@ Fima is a modern, two-panel file manager built with Flutter, designed specifical
 - **Cross-Platform**: Runs natively on Linux, Windows, and macOS.
 - **Modern UI**: Clean and minimal interface with support for dark and light themes.
 - **Workspaces**: Create dedicated workspaces for different projects and switch between them instantly.
+- **Remote connections**: Save and manage remote connections via SSH (supports copy/paste between local opposite panel).
 - **Fully Customizable**: Remap any keyboard shortcut to match your personal workflow.
 
 ## Shortcuts
@@ -22,6 +27,7 @@ Maximize your productivity with these essential shortcuts:
 | **Go to File** | `Ctrl` + `P` | `Cmd` + `P` |
 | **Command Palette** | `Ctrl` + `Shift` + `P` | `Cmd` + `Shift` + `P` |
 | **Workspaces** | `Ctrl` + `W` | `Cmd` + `W` |
+| **Remote connections** | `Ctrl` + `R` | `Cmd` + `R` |
 
 ## Getting Started
 

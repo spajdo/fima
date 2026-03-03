@@ -5,12 +5,23 @@ This document provides guidelines and commands for agents working on the Fima pr
 ## Build, Lint, and Test Commands
 
 ### Flutter Commands
+
+> **Note:** Always use `--no-tree-shake-icons` when building/running. The `file_icon` package uses
+> non-constant `IconData` instances which breaks Flutter's icon tree-shaking. Omitting this flag
+> will cause a build failure.
+
 ```bash
 # Run the application
-flutter run
+flutter run --no-tree-shake-icons
+
+# Build for macOS
+flutter build macos --no-tree-shake-icons
 
 # Build for Linux desktop
-flutter build linux
+flutter build linux --no-tree-shake-icons
+
+# Build for Windows
+flutter build windows --no-tree-shake-icons
 
 # Analyze code for errors and warnings
 flutter analyze
@@ -37,7 +48,7 @@ flutter pub get
 dart format .
 
 # Run with specific device
-flutter run -d linux
+flutter run --no-tree-shake-icons -d macos
 ```
 
 ---

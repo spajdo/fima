@@ -68,7 +68,7 @@ class UserSettings {
       themeName: 'Light',
       keyMap: {},
       useBuiltInTerminal: false,
-      remoteConnections: const [],
+      remoteConnections: [],
       leftPanelSortColumn: 0,
       leftPanelSortAscending: true,
       rightPanelSortColumn: 0,
