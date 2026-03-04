@@ -86,26 +86,51 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     int index,
     FileSystemItem item,
     PanelController controller,
+    int currentFocusedIndex,
   ) {
     final now = DateTime.now();
+    final kb = HardwareKeyboard.instance;
+    final isCtrlOrCmd = kb.isControlPressed || kb.isMetaPressed;
+    final isShift = kb.isShiftPressed;
 
+    // Double-tap → enter the item (navigate / open)
     if (_lastTappedIndex == index &&
         _lastTapTime != null &&
-        now.difference(_lastTapTime!) < _doubleTapDelay) {
+        now.difference(_lastTapTime!) < _doubleTapDelay &&
+        !isCtrlOrCmd &&
+        !isShift) {
       controller.enterFocusedItem();
       _lastTappedIndex = null;
       _lastTapTime = null;
-    } else {
-      _panelFocusNode.requestFocus(); // take Flutter focus from terminal
-      ref
-          .read(focusProvider.notifier)
-          .setActivePanel(
-            widget.panelId == 'left' ? ActivePanel.left : ActivePanel.right,
-          );
-      controller.setFocusedIndex(index);
-      _lastTappedIndex = index;
-      _lastTapTime = now;
+      return;
     }
+
+    // Take Flutter focus back from the terminal / other widgets
+    _panelFocusNode.requestFocus();
+    ref
+        .read(focusProvider.notifier)
+        .setActivePanel(
+          widget.panelId == 'left' ? ActivePanel.left : ActivePanel.right,
+        );
+
+    if (isCtrlOrCmd) {
+      // Ctrl/Cmd + click: toggle this item's selection, keep all others
+      controller.toggleSelection(item.path);
+      controller.setFocusedIndex(index);
+      _lastTappedIndex = index; // new anchor for future shift-clicks
+    } else if (isShift) {
+      // Shift + click: select range from the current focused index to clicked item
+      final anchor = _lastTappedIndex ?? currentFocusedIndex;
+      controller.selectRange(anchor, index);
+      controller.setFocusedIndex(index);
+      // Keep _lastTappedIndex unchanged so repeated Shift+clicks extend from same anchor
+    } else {
+      // Plain click: only move focus, do not change selection
+      controller.setFocusedIndex(index);
+      _lastTappedIndex = index; // reset anchor
+    }
+
+    _lastTapTime = now;
   }
 
   void _scrollToIndex(int index, int itemCount, double itemHeight) {
@@ -244,7 +269,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       if (paths.isEmpty) return;
 
       // Skip if every item already lives directly inside the target folder.
-      final allSameParent = paths.every((path) => p.dirname(path) == targetPath);
+      final allSameParent = paths.every(
+        (path) => p.dirname(path) == targetPath,
+      );
       if (allSameParent) return;
 
       // Skip if any dragged path IS the target folder.
@@ -253,13 +280,15 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       final sourcePanelId = dragState.sourcePanelId!;
       ref.read(dragStateProvider.notifier).endDrag();
 
-      await ref.read(operationStatusProvider.notifier).startDropOperation(
-        sourcePaths: paths,
-        sourcePanelId: sourcePanelId,
-        destinationPanelId: widget.panelId,
-        destinationPath: targetPath,
-        isCopy: false,
-      );
+      await ref
+          .read(operationStatusProvider.notifier)
+          .startDropOperation(
+            sourcePaths: paths,
+            sourcePanelId: sourcePanelId,
+            destinationPanelId: widget.panelId,
+            destinationPath: targetPath,
+            isCopy: false,
+          );
     } else {
       // External drag: copy each file into targetPath.
       final repository = ref.read(fileSystemRepositoryProvider);
@@ -287,7 +316,11 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       // Refresh the panel that received the drop.
       await ref
           .read(panelStateProvider(widget.panelId).notifier)
-          .loadPath(targetPath, addToVisited: false, preserveFocusedIndex: true);
+          .loadPath(
+            targetPath,
+            addToVisited: false,
+            preserveFocusedIndex: true,
+          );
     }
   }
 
@@ -632,7 +665,12 @@ class _FilePanelState extends ConsumerState<FilePanel> {
 
                           Widget itemRow = GestureDetector(
                             onTapDown: (_) {
-                              _handleTapDown(index, item, controller);
+                              _handleTapDown(
+                                index,
+                                item,
+                                controller,
+                                panelState.focusedIndex,
+                              );
                             },
                             child: Container(
                               decoration: BoxDecoration(
@@ -653,95 +691,103 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                                       )
                                     : null,
                               ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                final iconWidth = fontSize + 10;
-                                final availableWidth =
-                                    constraints.maxWidth -
-                                    iconWidth -
-                                    _splitterWidth * 2;
-                                final sizeWidth =
-                                    availableWidth * _sizeWidthFraction;
-                                final modifiedWidth =
-                                    availableWidth *
-                                    (1.0 -
-                                        _nameWidthFraction -
-                                        _sizeWidthFraction);
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final iconWidth = fontSize + 10;
+                                  final availableWidth =
+                                      constraints.maxWidth -
+                                      iconWidth -
+                                      _splitterWidth * 2;
+                                  final sizeWidth =
+                                      availableWidth * _sizeWidthFraction;
+                                  final modifiedWidth =
+                                      availableWidth *
+                                      (1.0 -
+                                          _nameWidthFraction -
+                                          _sizeWidthFraction);
 
-                                return Row(
-                                  children: [
-                                    SizedBox(
-                                      width: iconWidth,
-                                      child: _buildFileIcon(item, fontSize + 2),
-                                    ),
-                                    Expanded(
-                                      child: item.path == panelState.editingPath
-                                          ? RenameField(
-                                              initialValue: item.name,
-                                              style: theme.textTheme.bodySmall
-                                                  ?.copyWith(
-                                                    color: textColor,
-                                                    fontSize: fontSize,
-                                                  ),
-                                              onSubmitted: (newName) {
-                                                controller.renameItem(newName);
-                                              },
-                                              onCancel: () {
-                                                controller.cancelRenaming();
-                                              },
-                                            )
-                                          : Text(
-                                              item.name,
-                                              style: theme.textTheme.bodySmall
-                                                  ?.copyWith(
-                                                    color: textColor,
-                                                    fontSize: fontSize,
-                                                  ),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                    ),
-                                    SizedBox(width: _splitterWidth),
-                                    SizedBox(
-                                      width: sizeWidth,
-                                      child: Text(
-                                        item.isDirectory &&
-                                                !item.isParentDetails
-                                            ? '<DIR>'
-                                            : item.isParentDetails
-                                            ? ''
-                                            : _formatSize(item.size),
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                              color: textColor,
-                                              fontSize: fontSize,
-                                            ),
-                                        overflow: TextOverflow.ellipsis,
+                                  return Row(
+                                    children: [
+                                      SizedBox(
+                                        width: iconWidth,
+                                        child: _buildFileIcon(
+                                          item,
+                                          fontSize + 2,
+                                        ),
                                       ),
-                                    ),
-                                    SizedBox(width: _splitterWidth),
-                                    SizedBox(
-                                      width: modifiedWidth,
-                                      child: Text(
-                                        item.isParentDetails
-                                            ? ''
-                                            : _dateFormat.format(item.modified),
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                              color: textColor,
-                                              fontSize: fontSize,
-                                            ),
-                                        overflow: TextOverflow.ellipsis,
+                                      Expanded(
+                                        child:
+                                            item.path == panelState.editingPath
+                                            ? RenameField(
+                                                initialValue: item.name,
+                                                style: theme.textTheme.bodySmall
+                                                    ?.copyWith(
+                                                      color: textColor,
+                                                      fontSize: fontSize,
+                                                    ),
+                                                onSubmitted: (newName) {
+                                                  controller.renameItem(
+                                                    newName,
+                                                  );
+                                                },
+                                                onCancel: () {
+                                                  controller.cancelRenaming();
+                                                },
+                                              )
+                                            : Text(
+                                                item.name,
+                                                style: theme.textTheme.bodySmall
+                                                    ?.copyWith(
+                                                      color: textColor,
+                                                      fontSize: fontSize,
+                                                    ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
                                       ),
-                                    ),
-                                  ],
-                                );
-                              },
+                                      SizedBox(width: _splitterWidth),
+                                      SizedBox(
+                                        width: sizeWidth,
+                                        child: Text(
+                                          item.isDirectory &&
+                                                  !item.isParentDetails
+                                              ? '<DIR>'
+                                              : item.isParentDetails
+                                              ? ''
+                                              : _formatSize(item.size),
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: textColor,
+                                                fontSize: fontSize,
+                                              ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      SizedBox(width: _splitterWidth),
+                                      SizedBox(
+                                        width: modifiedWidth,
+                                        child: Text(
+                                          item.isParentDetails
+                                              ? ''
+                                              : _dateFormat.format(
+                                                  item.modified,
+                                                ),
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: textColor,
+                                                fontSize: fontSize,
+                                              ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
                             ),
-                          ),
                           );
 
                           if (item.isDirectory && !item.isParentDetails) {

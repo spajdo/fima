@@ -343,16 +343,34 @@ class PanelController extends StateNotifier<PanelState> {
   }
 
   void selectItem(String path, {bool clearOthers = true}) {
-    // Selection logic moved to separate "Mark" functionality (Space key)
-    // Clicking/Navigating now only moves focus, unless specifically requested.
-    // For compatibility with single-click selection if needed in future:
-    /*
-     if (clearOthers) {
-       state = state.copyWith(selectedItems: {path});
-     } else {
-       toggleSelection(path);
-     }
-     */
+    if (clearOthers) {
+      selectItemOnly(path);
+    } else {
+      toggleSelection(path);
+    }
+  }
+
+  /// Clears existing selection and selects only the item at [path].
+  void selectItemOnly(String path) {
+    state = state.copyWith(selectedItems: {path});
+  }
+
+  /// Adds items between [fromIndex] and [toIndex] (inclusive) to the current
+  /// selection without clearing items that are already selected outside the range.
+  void selectRange(int fromIndex, int toIndex) {
+    if (state.items.isEmpty) return;
+    final lo = fromIndex.clamp(0, state.items.length - 1);
+    final hi = toIndex.clamp(0, state.items.length - 1);
+    final start = lo < hi ? lo : hi;
+    final end = lo < hi ? hi : lo;
+    final newSelection = Set<String>.from(state.selectedItems);
+    for (int i = start; i <= end; i++) {
+      final item = state.items[i];
+      if (!item.isParentDetails) {
+        newSelection.add(item.path);
+      }
+    }
+    state = state.copyWith(selectedItems: newSelection);
   }
 
   void sort(SortColumn column) {
