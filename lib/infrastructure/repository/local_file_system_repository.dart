@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:fima/domain/entity/file_operation.dart';
 import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/repository/file_system_repository.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -394,30 +395,108 @@ class LocalFileSystemRepository implements FileSystemRepository {
 
   @override
   Future<void> moveToTrash(String path) async {
-    // Determine trash directory (Freedesktop.org spec)
-    // ~/.local/share/Trash
-    final home = Platform.environment['HOME'];
-    if (home == null) {
-      // Fallback to permanent delete if HOME not set (unlikely on Linux)
-      return deleteItem(path);
+    if (Platform.isMacOS) {
+      await _moveToTrashMacOS(path);
+    } else if (Platform.isLinux) {
+      await _moveToTrashLinux(path);
+    } else if (Platform.isWindows) {
+      await _moveToTrashWindows(path);
+    } else {
+      // Unknown platform — fall back to permanent delete
+      await deleteItem(path);
     }
+  }
 
-    final trashDir = Directory(p.join(home, '.local', 'share', 'Trash'));
-    final filesDir = Directory(p.join(trashDir.path, 'files'));
-    final infoDir = Directory(p.join(trashDir.path, 'info'));
-
-    if (!await filesDir.exists()) {
-      await filesDir.create(recursive: true);
+  // ---------------------------------------------------------------------------
+  // Shared method to get an app-specific fallback trash directory
+  // ---------------------------------------------------------------------------
+  Future<Directory> _getFallbackTrashDir() async {
+    final appSupportDir = await getApplicationSupportDirectory();
+    final fallbackTrashDir = Directory(p.join(appSupportDir.path, 'Trash'));
+    if (!await fallbackTrashDir.exists()) {
+      await fallbackTrashDir.create(recursive: true);
     }
-    if (!await infoDir.exists()) {
-      await infoDir.create(recursive: true);
+    return fallbackTrashDir;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Shared method to move an item to a trash directory, ensuring unique name
+  // ---------------------------------------------------------------------------
+  Future<void> _moveToDir(String path, Directory trashDir) async {
+    if (!await trashDir.exists()) {
+      await trashDir.create(recursive: true);
     }
 
     final entityName = p.basename(path);
     String uniqueName = entityName;
     int counter = 1;
 
-    // Ensure unique name in trash
+    // Ensure unique name in trash to avoid overwriting
+    while (await File(p.join(trashDir.path, uniqueName)).exists() ||
+        await Directory(p.join(trashDir.path, uniqueName)).exists()) {
+      final extension = p.extension(entityName);
+      final nameWithoutExtension = p.basenameWithoutExtension(entityName);
+      uniqueName = extension.isNotEmpty
+          ? '$nameWithoutExtension $counter$extension'
+          : '$nameWithoutExtension $counter';
+      counter++;
+    }
+
+    await moveItem(path, p.join(trashDir.path, uniqueName));
+  }
+
+  // ---------------------------------------------------------------------------
+  // macOS: move to ~/.Trash  (the real Finder trash folder for the current user)
+  // Falls back to app-specific trash folder if ~/.Trash doesn't exist.
+  // ---------------------------------------------------------------------------
+  Future<void> _moveToTrashMacOS(String path) async {
+    final home = Platform.environment['HOME'];
+    Directory trashDir;
+
+    if (home != null) {
+      final systemTrash = Directory(p.join(home, '.Trash'));
+      if (await systemTrash.exists()) {
+        trashDir = systemTrash;
+      } else {
+        // ~/.Trash doesn't exist (unusual); use app-side fallback
+        trashDir = await _getFallbackTrashDir();
+      }
+    } else {
+      trashDir = await _getFallbackTrashDir();
+    }
+
+    await _moveToDir(path, trashDir);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Linux: FreeDesktop.org Trash spec (~/.local/share/Trash)
+  // Falls back to app-specific trash folder if the spec directory doesn't exist.
+  // ---------------------------------------------------------------------------
+  Future<void> _moveToTrashLinux(String path) async {
+    final home = Platform.environment['HOME'];
+    bool useSystemTrash = false;
+    Directory filesDir;
+    Directory? infoDir;
+
+    if (home != null) {
+      final trashDir = Directory(p.join(home, '.local', 'share', 'Trash'));
+      if (await trashDir.exists()) {
+        filesDir = Directory(p.join(trashDir.path, 'files'));
+        infoDir = Directory(p.join(trashDir.path, 'info'));
+        if (!await filesDir.exists()) await filesDir.create(recursive: true);
+        if (!await infoDir.exists()) await infoDir.create(recursive: true);
+        useSystemTrash = true;
+      } else {
+        filesDir = await _getFallbackTrashDir();
+      }
+    } else {
+      filesDir = await _getFallbackTrashDir();
+    }
+
+    final entityName = p.basename(path);
+    String uniqueName = entityName;
+    int counter = 1;
+
     while (await File(p.join(filesDir.path, uniqueName)).exists() ||
         await Directory(p.join(filesDir.path, uniqueName)).exists()) {
       final extension = p.extension(entityName);
@@ -426,33 +505,51 @@ class LocalFileSystemRepository implements FileSystemRepository {
       counter++;
     }
 
-    final destinationPath = p.join(filesDir.path, uniqueName);
-    final infoPath = p.join(infoDir.path, '$uniqueName.trashinfo');
+    await moveItem(path, p.join(filesDir.path, uniqueName));
 
-    // Move the actual file/directory
-    await moveItem(path, destinationPath);
+    // Only write .trashinfo when using the real FreeDesktop trash
+    if (useSystemTrash && infoDir != null) {
+      final infoPath = p.join(infoDir.path, '$uniqueName.trashinfo');
+      final now = DateTime.now().toUtc();
+      final formattedDate =
+          '${now.year.toString().padLeft(4, '0')}-'
+          '${now.month.toString().padLeft(2, '0')}-'
+          '${now.day.toString().padLeft(2, '0')}T'
+          '${now.hour.toString().padLeft(2, '0')}:'
+          '${now.minute.toString().padLeft(2, '0')}:'
+          '${now.second.toString().padLeft(2, '0')}';
+      final infoContent =
+          '[Trash Info]\nPath=$path\nDeletionDate=$formattedDate\n';
+      await File(infoPath).writeAsString(infoContent);
+    }
+  }
 
-    // Create .trashinfo file
-    // [Trash Info]
-    // Path=/original/path/to/file
-    // DeletionDate=YYYY-MM-DDThh:mm:ss
-    final now = DateTime.now().toUtc(); // Spec says usually RFC3339
-    // Format: YYYY-MM-DDThh:mm:ss (no timezone, assumed local/UTC? Spec says YYYYMMDDThhmmss)
-    // "The date and time are in the YYYY-MM-DDThh:mm:ss format."
-    final formattedDate =
-        '${now.year.toString().padLeft(4, '0')}-'
-        '${now.month.toString().padLeft(2, '0')}-'
-        '${now.day.toString().padLeft(2, '0')}T'
-        '${now.hour.toString().padLeft(2, '0')}:'
-        '${now.minute.toString().padLeft(2, '0')}:'
-        '${now.second.toString().padLeft(2, '0')}';
-
-    final infoContent =
-        '''[Trash Info]
-Path=$path
-DeletionDate=$formattedDate
+  // ---------------------------------------------------------------------------
+  // Windows: use Shell.Application COM to send items to the Recycle Bin so that
+  // restore metadata is preserved and the Recycle Bin icon updates correctly.
+  // ---------------------------------------------------------------------------
+  Future<void> _moveToTrashWindows(String path) async {
+    // PowerShell one-liner — Shell.Application.NameSpace(10) is the Recycle Bin
+    // namespace and MoveHere() moves items there.
+    final script =
+        '''
+\$shell = New-Object -ComObject Shell.Application
+\$item  = \$shell.Namespace(0).ParseName('${path.replaceAll("'", "''")}')
+if (\$item -ne \$null) { \$item.InvokeVerb('delete') }
 ''';
-
-    await File(infoPath).writeAsString(infoContent);
+    final result = await Process.run('powershell', [
+      '-NonInteractive',
+      '-NoProfile',
+      '-Command',
+      script,
+    ], runInShell: true);
+    if (result.exitCode != 0) {
+      // PowerShell failed — fall back to app-specific trash folder
+      debugPrint(
+        'moveToTrash (Windows) via PowerShell failed: ${result.stderr}. Using app trash folder.',
+      );
+      final fallback = await _getFallbackTrashDir();
+      await _moveToDir(path, fallback);
+    }
   }
 }

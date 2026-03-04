@@ -9,6 +9,11 @@ class KeyMapAction {
   final bool showInOmniPanel;
   final int? omniPanelOrder;
 
+  /// Whether this action appears in the keymap settings panel.
+  /// Set to false for actions that have no shortcut and should not be
+  /// user-configurable (e.g. "Go to Trash").
+  final bool showInKeymap;
+
   const KeyMapAction({
     required this.id,
     required this.label,
@@ -17,6 +22,7 @@ class KeyMapAction {
     this.isEditable = true,
     this.showInOmniPanel = false,
     this.omniPanelOrder,
+    this.showInKeymap = true,
   });
 
   String get defaultShortcut {
@@ -154,12 +160,22 @@ class KeyMapActionDefs {
       omniPanelOrder: 12,
     ),
     KeyMapAction(
+      id: 'goToTrash',
+      label: 'Go to Trash',
+      defaultShortcutLinux: '',
+      defaultShortcutMacOS: '',
+      isEditable: false,
+      showInOmniPanel: true,
+      omniPanelOrder: 13,
+      showInKeymap: false,
+    ),
+    KeyMapAction(
       id: 'permanentDelete',
       label: 'Permanent Delete',
       defaultShortcutLinux: 'Shift+Delete',
       defaultShortcutMacOS: '⇧ + Delete',
       showInOmniPanel: true,
-      omniPanelOrder: 13,
+      omniPanelOrder: 14,
     ),
     KeyMapAction(
       id: 'toggleHiddenFiles',
@@ -167,7 +183,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+H',
       defaultShortcutMacOS: '⌘ + H',
       showInOmniPanel: true,
-      omniPanelOrder: 14,
+      omniPanelOrder: 15,
     ),
     KeyMapAction(
       id: 'copyToClipboard',
@@ -175,7 +191,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+C',
       defaultShortcutMacOS: '⌘ + C',
       showInOmniPanel: true,
-      omniPanelOrder: 15,
+      omniPanelOrder: 16,
     ),
     KeyMapAction(
       id: 'cutToClipboard',
@@ -183,7 +199,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+X',
       defaultShortcutMacOS: '⌘ + X',
       showInOmniPanel: true,
-      omniPanelOrder: 16,
+      omniPanelOrder: 17,
     ),
     KeyMapAction(
       id: 'pasteFromClipboard',
@@ -191,7 +207,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+V',
       defaultShortcutMacOS: '⌘ + V',
       showInOmniPanel: true,
-      omniPanelOrder: 17,
+      omniPanelOrder: 18,
     ),
     KeyMapAction(
       id: 'selectAll',
@@ -199,7 +215,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+A',
       defaultShortcutMacOS: '⌘ + A',
       showInOmniPanel: true,
-      omniPanelOrder: 18,
+      omniPanelOrder: 19,
     ),
     KeyMapAction(
       id: 'deselectAll',

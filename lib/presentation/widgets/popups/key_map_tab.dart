@@ -31,6 +31,9 @@ class _KeyMapTabState extends ConsumerState<KeyMapTab> {
     SettingsController settingsController,
   ) {
     return KeyMapActionDefs.all.where((action) {
+      // Exclude actions that should not appear in keymap settings
+      if (!action.showInKeymap) return false;
+
       // Filter by text (label)
       if (_searchText.isNotEmpty) {
         if (!action.label.toLowerCase().contains(_searchText.toLowerCase())) {

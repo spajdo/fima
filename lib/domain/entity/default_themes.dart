@@ -202,19 +202,19 @@ class DefaultThemes {
   static List<FimaTheme> get all => [
     light,
     dark,
-    nightOwl,
-    monokai,
-    solarizedLight,
-    solarizedDark,
+    catppuccinMocha,
     dracula,
-    matrix,
-    highContrast,
-    oneDarkPro,
     githubDark,
     gruvboxDark,
-    catppuccinMocha,
-    tokyoNight,
+    highContrast,
+    matrix,
+    monokai,
+    nightOwl,
     nord,
+    oneDarkPro,
+    solarizedDark,
+    solarizedLight,
+    tokyoNight,
   ];
 
   static FimaTheme getByName(String name) {

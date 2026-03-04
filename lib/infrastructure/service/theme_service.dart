@@ -88,6 +88,15 @@ class ThemeService {
       return DefaultThemes.all;
     }
 
+    // Sort: Light first, Dark second, then the rest alphabetically.
+    themes.sort((a, b) {
+      if (a.name == 'Light') return -1;
+      if (b.name == 'Light') return 1;
+      if (a.name == 'Dark') return -1;
+      if (b.name == 'Dark') return 1;
+      return a.name.compareTo(b.name);
+    });
+
     return themes;
   }
 

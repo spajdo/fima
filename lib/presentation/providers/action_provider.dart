@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:fima/domain/entity/app_action.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:fima/domain/entity/key_map_action.dart';
 import 'package:fima/domain/entity/workspace.dart';
 import 'package:fima/infrastructure/service/linux_application_service.dart';
@@ -168,6 +171,9 @@ class ActionGenerator {
       case 'deleteToTrash':
         panelController.deleteSelectedItems(permanent: false);
         break;
+      case 'goToTrash':
+        _navigateToTrash(activePanelId, panelController);
+        break;
       case 'permanentDelete':
         _showDeleteConfirmation(
           activePanelId,
@@ -269,6 +275,46 @@ class ActionGenerator {
           builder: (context) => const ShortcutsDialog(),
         );
         break;
+    }
+  }
+
+  void _navigateToTrash(String activePanelId, dynamic panelController) async {
+    String? systemTrashPath;
+
+    if (Platform.isMacOS) {
+      final home = Platform.environment['HOME'] ?? '';
+      if (home.isNotEmpty) systemTrashPath = '$home/.Trash';
+    } else if (Platform.isLinux) {
+      final home = Platform.environment['HOME'] ?? '';
+      if (home.isNotEmpty) {
+        systemTrashPath = '$home/.local/share/Trash/files';
+      }
+    } else if (Platform.isWindows) {
+      final systemDrive =
+          Platform.environment['SystemDrive'] ??
+          Platform.environment['HOMEDRIVE'] ??
+          'C:';
+      systemTrashPath = '$systemDrive\\\$Recycle.Bin';
+    }
+
+    // Check if the system trash exists; otherwise use app-specific fallback
+    if (systemTrashPath != null && await Directory(systemTrashPath).exists()) {
+      panelController.loadPath(systemTrashPath);
+    } else {
+      // Fall back to the app-support trash folder (mirrors moveToTrash fallback)
+      try {
+        final appSupportDir = await getApplicationSupportDirectory();
+        final fallbackTrash = '${appSupportDir.path}/Trash';
+        final fallbackDir = Directory(fallbackTrash);
+        if (!await fallbackDir.exists()) {
+          await fallbackDir.create(recursive: true);
+        }
+        panelController.loadPath(fallbackTrash);
+      } catch (e) {
+        ref
+            .read(overlayProvider.notifier)
+            .showToast('Could not locate Trash folder');
+      }
     }
   }
 
