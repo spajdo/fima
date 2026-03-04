@@ -54,6 +54,7 @@ dependencies:
   flutter_html: ^3.0.0
   xml: ^6.6.1
   flutter_svg: ^2.0.10
+  super_drag_and_drop: ^0.9.1
 
 dev_dependencies:
   flutter_test:

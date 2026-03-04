@@ -150,6 +150,72 @@ class OperationController extends StateNotifier<OperationState> {
     );
   }
 
+  /// Runs a move (or copy) from explicit [sourcePaths] into [destinationPath],
+  /// then refreshes both panels on completion.  Used by the DnD handler.
+  Future<void> startDropOperation({
+    required List<String> sourcePaths,
+    required String sourcePanelId,
+    required String destinationPanelId,
+    required String destinationPath,
+    required bool isCopy,
+  }) async {
+    if (state.isRunning) return;
+    if (sourcePaths.isEmpty || destinationPath.isEmpty) return;
+
+    final sourceState = _ref.read(panelStateProvider(sourcePanelId));
+    final sourceController = _ref.read(
+      panelStateProvider(sourcePanelId).notifier,
+    );
+    final destController = _ref.read(
+      panelStateProvider(destinationPanelId).notifier,
+    );
+
+    _cancellationToken = CancellationToken();
+    state = OperationState(
+      isRunning: true,
+      operationType: isCopy ? 'Copying' : 'Moving',
+    );
+
+    final repository = _ref.read(fileSystemRepositoryProvider);
+    final stream = isCopy
+        ? repository.copyItems(
+            sourcePaths,
+            destinationPath,
+            _cancellationToken!,
+          )
+        : repository.moveItems(
+            sourcePaths,
+            destinationPath,
+            _cancellationToken!,
+          );
+
+    _subscription = stream.listen(
+      (status) {
+        state = state.copyWith(status: status);
+      },
+      onError: (e) {
+        debugPrint('Drop operation error: $e');
+        state = const OperationState();
+      },
+      onDone: () async {
+        state = const OperationState();
+        if (!isCopy) {
+          sourceController.deselectAll();
+        }
+        await sourceController.loadPath(
+          sourceState.currentPath,
+          addToVisited: false,
+          preserveFocusedIndex: true,
+        );
+        await destController.loadPath(
+          destinationPath,
+          addToVisited: false,
+          preserveFocusedIndex: true,
+        );
+      },
+    );
+  }
+
   @override
   void dispose() {
     _subscription?.cancel();

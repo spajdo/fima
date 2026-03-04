@@ -1,11 +1,17 @@
+import 'dart:async';
+
 import 'package:fima/domain/entity/app_theme.dart';
 import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/entity/panel_state.dart';
 import 'package:fima/domain/entity/remote_connection.dart';
+import 'package:fima/presentation/providers/drag_state_provider.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
+import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
+import 'package:fima/presentation/widgets/panel/draggable_file_item.dart';
+import 'package:fima/presentation/widgets/panel/drop_target_item.dart';
 import 'package:fima/presentation/widgets/panel/path_editor_dialog.dart';
 import 'package:fima/presentation/widgets/panel/rename_field.dart';
 import 'package:flutter/gestures.dart';
@@ -15,6 +21,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_icon/file_icon.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as p;
+import 'package:super_drag_and_drop/super_drag_and_drop.dart';
 
 class FilePanel extends ConsumerStatefulWidget {
   final String panelId;
@@ -225,6 +233,62 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       return FaIcon(FontAwesomeIcons.folder, size: size, color: Colors.amber);
     }
     return FileIcon(item.name, size: size);
+  }
+
+  Future<void> _handleDrop(PerformDropEvent event, String targetPath) async {
+    final dragState = ref.read(dragStateProvider);
+
+    if (dragState.sourcePanelId != null) {
+      // Internal drag: move dragged paths into targetPath.
+      final paths = dragState.draggedPaths;
+      if (paths.isEmpty) return;
+
+      // Skip if every item already lives directly inside the target folder.
+      final allSameParent = paths.every((path) => p.dirname(path) == targetPath);
+      if (allSameParent) return;
+
+      // Skip if any dragged path IS the target folder.
+      if (paths.any((path) => path == targetPath)) return;
+
+      final sourcePanelId = dragState.sourcePanelId!;
+      ref.read(dragStateProvider.notifier).endDrag();
+
+      await ref.read(operationStatusProvider.notifier).startDropOperation(
+        sourcePaths: paths,
+        sourcePanelId: sourcePanelId,
+        destinationPanelId: widget.panelId,
+        destinationPath: targetPath,
+        isCopy: false,
+      );
+    } else {
+      // External drag: copy each file into targetPath.
+      final repository = ref.read(fileSystemRepositoryProvider);
+      for (final dropItem in event.session.items) {
+        final reader = dropItem.dataReader;
+        if (reader == null) continue;
+        if (reader.canProvide(Formats.fileUri)) {
+          final completer = Completer<Uri?>();
+          reader.getValue<Uri>(
+            Formats.fileUri,
+            (value) => completer.complete(value),
+          );
+          final uri = await completer.future;
+          if (uri != null) {
+            final sourcePath = uri.toFilePath();
+            final dest = p.join(targetPath, p.basename(sourcePath));
+            try {
+              await repository.copyItem(sourcePath, dest);
+            } catch (e) {
+              debugPrint('Error copying dropped file $sourcePath: $e');
+            }
+          }
+        }
+      }
+      // Refresh the panel that received the drop.
+      await ref
+          .read(panelStateProvider(widget.panelId).notifier)
+          .loadPath(targetPath, addToVisited: false, preserveFocusedIndex: true);
+    }
   }
 
   void _showPathEditor(BuildContext context, String currentPath) {
@@ -522,59 +586,73 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                 ),
                 // File list
                 Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      _panelFocusNode
-                          .requestFocus(); // take Flutter focus from terminal
-                      ref
-                          .read(focusProvider.notifier)
-                          .setActivePanel(
-                            widget.panelId == 'left'
-                                ? ActivePanel.left
-                                : ActivePanel.right,
+                  child: DropTargetPanel(
+                    panelId: widget.panelId,
+                    currentPath: panelState.currentPath,
+                    onDrop: _handleDrop,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        _panelFocusNode
+                            .requestFocus(); // take Flutter focus from terminal
+                        ref
+                            .read(focusProvider.notifier)
+                            .setActivePanel(
+                              widget.panelId == 'left'
+                                  ? ActivePanel.left
+                                  : ActivePanel.right,
+                            );
+                      },
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        itemExtent: itemHeight,
+                        itemCount: panelState.items.length,
+                        itemBuilder: (context, index) {
+                          final item = panelState.items[index];
+                          final isSelected = panelState.selectedItems.contains(
+                            item.path,
                           );
-                    },
-                    child: ListView.builder(
-                      controller: _scrollController,
-                      itemExtent: itemHeight,
-                      itemCount: panelState.items.length,
-                      itemBuilder: (context, index) {
-                        final item = panelState.items[index];
-                        final isSelected = panelState.selectedItems.contains(
-                          item.path,
-                        );
-                        final isFocused = panelState.focusedIndex == index;
-                        final focusState = ref.watch(focusProvider);
-                        final isActivePanel =
-                            (widget.panelId == 'left' &&
-                                focusState.activePanel == ActivePanel.left) ||
-                            (widget.panelId == 'right' &&
-                                focusState.activePanel == ActivePanel.right);
+                          final isFocused = panelState.focusedIndex == index;
+                          final focusState = ref.watch(focusProvider);
+                          final isActivePanel =
+                              (widget.panelId == 'left' &&
+                                  focusState.activePanel == ActivePanel.left) ||
+                              (widget.panelId == 'right' &&
+                                  focusState.activePanel == ActivePanel.right);
+                          final dragState = ref.watch(dragStateProvider);
+                          final isDropTarget =
+                              item.isDirectory &&
+                              !item.isParentDetails &&
+                              dragState.hoveredDropTargetPath == item.path;
 
-                        // Text color is red if selected (Marked), otherwise default
-                        final textColor = isSelected
-                            ? Colors.red
-                            : fimaTheme.textColor;
+                          // Text color is red if selected (Marked), otherwise default
+                          final textColor = isSelected
+                              ? Colors.red
+                              : fimaTheme.textColor;
 
-                        return GestureDetector(
-                          onTapDown: (_) {
-                            _handleTapDown(index, item, controller);
-                          },
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? fimaTheme.selectedItemColor
-                                  : isFocused && isActivePanel
-                                  ? fimaTheme.focusedItemColor
-                                  : fimaTheme.backgroundColor,
-                              border: isFocused && isActivePanel
-                                  ? Border.all(
-                                      color: fimaTheme.accentColor,
-                                      width: 1,
-                                    )
-                                  : null,
-                            ),
+                          Widget itemRow = GestureDetector(
+                            onTapDown: (_) {
+                              _handleTapDown(index, item, controller);
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? fimaTheme.selectedItemColor
+                                    : isFocused && isActivePanel
+                                    ? fimaTheme.focusedItemColor
+                                    : fimaTheme.backgroundColor,
+                                border: isDropTarget
+                                    ? Border.all(
+                                        color: fimaTheme.accentColor,
+                                        width: 2,
+                                      )
+                                    : isFocused && isActivePanel
+                                    ? Border.all(
+                                        color: fimaTheme.accentColor,
+                                        width: 1,
+                                      )
+                                    : null,
+                              ),
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
                               vertical: 4,
@@ -664,8 +742,23 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                               },
                             ),
                           ),
-                        );
-                      },
+                          );
+
+                          if (item.isDirectory && !item.isParentDetails) {
+                            itemRow = DropTargetFolder(
+                              folderPath: item.path,
+                              onDrop: _handleDrop,
+                              child: itemRow,
+                            );
+                          }
+                          return DraggableFileItem(
+                            item: item,
+                            panelState: panelState,
+                            panelId: widget.panelId,
+                            child: itemRow,
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),

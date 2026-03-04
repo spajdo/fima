@@ -4,8 +4,10 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   flutter_secure_storage_windows
+  irondash_engine_context
   pasteboard
   screen_retriever
+  super_native_extensions
   window_manager
 )
 
