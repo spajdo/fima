@@ -4,7 +4,7 @@ import 'package:fima/domain/entity/app_action.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:fima/domain/entity/key_map_action.dart';
 import 'package:fima/domain/entity/workspace.dart';
-import 'package:fima/infrastructure/service/linux_application_service.dart';
+import 'package:fima/infrastructure/service/application_service.dart';
 import 'package:fima/infrastructure/service/system_clipboard_service.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
@@ -358,7 +358,7 @@ class ActionGenerator {
 
     if (targetPath == null || targetPath.isEmpty) return;
 
-    final appService = LinuxApplicationService();
+    final appService = ApplicationService();
     final applications = appService.getInstalledApplications();
 
     if (!context.mounted) return;

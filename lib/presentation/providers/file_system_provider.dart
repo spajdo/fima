@@ -826,10 +826,15 @@ class PanelController extends StateNotifier<PanelState> {
   List<String> _buildCommand(String exec, String path) {
     final parts = exec.split(' ');
     final result = <String>[];
+    bool pathSubstituted = false;
     for (final part in parts) {
       if (part.isEmpty) continue;
       final replaced = _replaceExecParams(part, path);
+      if (replaced != part) pathSubstituted = true;
       result.add(replaced);
+    }
+    if (!pathSubstituted) {
+      result.add(path);
     }
     return result;
   }

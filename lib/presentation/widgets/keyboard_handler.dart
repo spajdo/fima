@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:fima/domain/entity/file_operation.dart';
 import 'package:fima/domain/entity/workspace.dart';
 import 'package:fima/infrastructure/service/keyboard_utils.dart';
-import 'package:fima/infrastructure/service/linux_application_service.dart';
+import 'package:fima/infrastructure/service/application_service.dart';
 import 'package:fima/infrastructure/service/system_clipboard_service.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
@@ -351,7 +351,7 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
 
     if (targetPath == null || targetPath.isEmpty) return;
 
-    final appService = LinuxApplicationService();
+    final appService = ApplicationService();
     final applications = appService.getInstalledApplications();
 
     ApplicationPickerDialog.show(context, applications).then((selectedApp) {

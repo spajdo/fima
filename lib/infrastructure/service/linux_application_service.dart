@@ -1,8 +1,11 @@
 import 'dart:io';
+
 import 'package:fima/domain/entity/desktop_application.dart';
+import 'package:fima/infrastructure/service/application_service.dart';
 import 'package:flutter/foundation.dart';
 
-class LinuxApplicationService {
+class LinuxApplicationService implements ApplicationService {
+  @override
   List<DesktopApplication> getInstalledApplications() {
     final apps = <DesktopApplication>[];
 

@@ -29,8 +29,8 @@ class _ApplicationPickerDialogState extends State<ApplicationPickerDialog> {
   final TextEditingController _searchController = TextEditingController();
   List<DesktopApplication> _filteredApps = [];
   int _selectedIndex = 0;
-  final ScrollController _scrollController = ScrollController();
   final FocusNode _keyboardFocusNode = FocusNode();
+  final Map<int, GlobalKey> _itemKeys = {};
 
   @override
   void initState() {
@@ -42,7 +42,6 @@ class _ApplicationPickerDialogState extends State<ApplicationPickerDialog> {
   @override
   void dispose() {
     _searchController.dispose();
-    _scrollController.dispose();
     _keyboardFocusNode.dispose();
     super.dispose();
   }
@@ -59,25 +58,22 @@ class _ApplicationPickerDialogState extends State<ApplicationPickerDialog> {
         }).toList();
       }
       _selectedIndex = 0;
+      _itemKeys.clear();
     });
   }
 
   void _handleKeyEvent(KeyEvent event) {
     if (event is KeyDownEvent) {
       if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-        setState(() {
-          if (_selectedIndex < _filteredApps.length - 1) {
-            _selectedIndex++;
-            _scrollToSelected();
-          }
-        });
+        if (_selectedIndex < _filteredApps.length - 1) {
+          setState(() => _selectedIndex++);
+          WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelected());
+        }
       } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-        setState(() {
-          if (_selectedIndex > 0) {
-            _selectedIndex--;
-            _scrollToSelected();
-          }
-        });
+        if (_selectedIndex > 0) {
+          setState(() => _selectedIndex--);
+          WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelected());
+        }
       } else if (event.logicalKey == LogicalKeyboardKey.enter) {
         if (_filteredApps.isNotEmpty) {
           _selectApp(_filteredApps[_selectedIndex]);
@@ -89,25 +85,13 @@ class _ApplicationPickerDialogState extends State<ApplicationPickerDialog> {
   }
 
   void _scrollToSelected() {
-    if (_scrollController.hasClients) {
-      const itemHeight = 56.0;
-      final targetOffset = _selectedIndex * itemHeight;
-      final viewportHeight = _scrollController.position.viewportDimension;
-      final currentOffset = _scrollController.offset;
-
-      if (targetOffset < currentOffset) {
-        _scrollController.animateTo(
-          targetOffset,
-          duration: const Duration(milliseconds: 100),
-          curve: Curves.easeOut,
-        );
-      } else if (targetOffset + itemHeight > currentOffset + viewportHeight) {
-        _scrollController.animateTo(
-          targetOffset + itemHeight - viewportHeight,
-          duration: const Duration(milliseconds: 100),
-          curve: Curves.easeOut,
-        );
-      }
+    final ctx = _itemKeys[_selectedIndex]?.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 100),
+        curve: Curves.easeOut,
+      );
     }
   }
 
@@ -155,12 +139,16 @@ class _ApplicationPickerDialogState extends State<ApplicationPickerDialog> {
               const SizedBox(height: 16),
               Expanded(
                 child: ListView.builder(
-                  controller: _scrollController,
                   itemCount: _filteredApps.length,
                   itemBuilder: (context, index) {
                     final app = _filteredApps[index];
                     final isSelected = index == _selectedIndex;
+                    final key = _itemKeys.putIfAbsent(
+                      index,
+                      () => GlobalKey(),
+                    );
                     return Material(
+                      key: key,
                       color: isSelected
                           ? Theme.of(context).colorScheme.primaryContainer
                           : Colors.transparent,
@@ -215,19 +203,57 @@ class _AppIcon extends StatelessWidget {
 
   const _AppIcon({required this.iconPath});
 
+  static final Map<String, String?> _pngCache = {};
+
+  static Future<String?> _getIconPng(String icnsPath) async {
+    if (_pngCache.containsKey(icnsPath)) return _pngCache[icnsPath];
+
+    final cacheDir = Directory('${Directory.systemTemp.path}/fima_app_icons');
+    if (!cacheDir.existsSync()) cacheDir.createSync(recursive: true);
+
+    final pngPath = '${cacheDir.path}/${icnsPath.hashCode.abs()}.png';
+    if (File(pngPath).existsSync()) {
+      _pngCache[icnsPath] = pngPath;
+      return pngPath;
+    }
+
+    final result = await Process.run(
+      'sips',
+      ['-s', 'format', 'png', icnsPath, '--out', pngPath],
+    );
+    final converted =
+        result.exitCode == 0 && File(pngPath).existsSync() ? pngPath : null;
+    _pngCache[icnsPath] = converted;
+    return converted;
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (iconPath.isEmpty || iconPath.startsWith('/') == false) {
-      return const Icon(Icons.apps, size: 24);
+    const fallback = Icon(Icons.apps, size: 24);
+
+    if (iconPath.isEmpty || !iconPath.startsWith('/')) return fallback;
+
+    if (iconPath.endsWith('.icns')) {
+      return FutureBuilder<String?>(
+        future: _getIconPng(iconPath),
+        builder: (context, snapshot) {
+          final png = snapshot.data;
+          if (png == null) return fallback;
+          return Image.file(
+            File(png),
+            width: 24,
+            height: 24,
+            errorBuilder: (_, e, _) => fallback,
+          );
+        },
+      );
     }
 
     return Image.file(
       File(iconPath),
       width: 24,
       height: 24,
-      errorBuilder: (context, error, stackTrace) {
-        return const Icon(Icons.apps, size: 24);
-      },
+      errorBuilder: (_, e, _) => fallback,
     );
   }
 }
