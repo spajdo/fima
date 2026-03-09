@@ -114,7 +114,16 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
 
         if (event is KeyDownEvent) {
           if (isNavigationKey) {
-            _startKeyRepeat(context, ref, event.logicalKey);
+            final activePanelIdForNav =
+                ref.read(focusProvider.notifier).getActivePanelId();
+            final isRenaming =
+                ref
+                    .read(panelStateProvider(activePanelIdForNav))
+                    .editingPath !=
+                null;
+            if (!isRenaming) {
+              _startKeyRepeat(context, ref, event.logicalKey);
+            }
             return KeyEventResult.ignored;
           }
           // Continue processing for other keys (Enter, Tab, Backspace, etc.)
@@ -190,51 +199,26 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         }
 
         // Check for custom keyboard shortcuts.
-        // When quick filter is active, only navigation actions are allowed through;
-        // all other shortcuts remain blocked so typed characters keep feeding the filter.
-        const quickFilterPassthroughActions = {
-          'enterDirectory',
-          'navigateParent',
-          'switchPanel',
-          'clearFilter',
-          'clearQuickFilter',
-        };
+        // Shortcuts execute regardless of quick-filter state: filter input only
+        // captures plain characters without modifiers, so modifier/function-key
+        // shortcuts (Ctrl+C, F2, Delete, …) cannot conflict with filter typing.
         final currentShortcut = KeyboardUtils.buildShortcutString(event);
         if (currentShortcut.isNotEmpty) {
           final actionId = ref
               .read(userSettingsProvider.notifier)
               .findActionByShortcut(currentShortcut);
           if (actionId != null) {
-            // Some actions should be globally processed regardless of quick filter
-            // e.g., showShortcuts (F1)
-            if (actionId == 'showShortcuts') {
-              _handleCustomShortcut(
-                ref,
-                context,
-                actionId,
-                activePanelId,
-                panelController,
-                currentPanelState,
-                currentShortcut,
-              );
-              return KeyEventResult.handled;
-            }
-
-            final filterActive = currentPanelState.quickFilterText.isNotEmpty;
-            if (!filterActive ||
-                quickFilterPassthroughActions.contains(actionId)) {
-              final result = _handleCustomShortcut(
-                ref,
-                context,
-                actionId,
-                activePanelId,
-                panelController,
-                currentPanelState,
-                currentShortcut,
-              );
-              if (result != null) {
-                return result;
-              }
+            final result = _handleCustomShortcut(
+              ref,
+              context,
+              actionId,
+              activePanelId,
+              panelController,
+              currentPanelState,
+              currentShortcut,
+            );
+            if (result != null) {
+              return result;
             }
           }
         }
