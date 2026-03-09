@@ -75,7 +75,18 @@ class CompoundFileSystemRepository implements FileSystemRepository {
   }
 
   @override
-  Future<void> copyItem(String sourcePath, String destinationPath) {
+  Future<void> copyItem(String sourcePath, String destinationPath) async {
+    if (_isZipPath(sourcePath)) {
+      // ZIP → Local: extract from archive
+      final token = CancellationToken();
+      await for (final _ in zipRepository.extractItems(
+        [sourcePath],
+        p.dirname(destinationPath),
+        token,
+      )) {}
+      return;
+    }
+
     final srcIsSsh = _isSshPath(sourcePath);
     final dstIsSsh = _isSshPath(destinationPath);
 
@@ -98,6 +109,10 @@ class CompoundFileSystemRepository implements FileSystemRepository {
 
   @override
   Future<void> moveItem(String sourcePath, String destinationPath) {
+    if (_isZipPath(sourcePath)) {
+      // ZIP is read-only; move behaves as copy.
+      return copyItem(sourcePath, destinationPath);
+    }
     return _getRepositoryForPath(
       sourcePath,
     ).moveItem(sourcePath, destinationPath);
@@ -120,13 +135,31 @@ class CompoundFileSystemRepository implements FileSystemRepository {
     for (final src in sourcePaths) {
       if (token.isCancelled) return;
 
+      final srcIsZip = _isZipPath(src);
       final srcIsSsh = _isSshPath(src);
       final dstIsSsh = _isSshPath(destinationPath);
       final name = _itemName(src);
       final destItemPath = _joinPath(destinationPath, name);
 
       try {
-        if (srcIsSsh && !dstIsSsh) {
+        if (srcIsZip) {
+          // ZIP → Local: extract from archive
+          await for (final status in zipRepository.extractItems(
+            [src],
+            destinationPath,
+            token,
+          )) {
+            yield OperationStatus(
+              totalBytes: status.totalBytes,
+              processedBytes: status.processedBytes,
+              totalItems: total,
+              processedItems: done,
+              currentItem: status.currentItem,
+            );
+          }
+          done++;
+          continue;
+        } else if (srcIsSsh && !dstIsSsh) {
           // SSH → Local
           await sshRepository.downloadToLocal(src, destItemPath);
         } else if (!srcIsSsh && dstIsSsh) {
@@ -180,13 +213,31 @@ class CompoundFileSystemRepository implements FileSystemRepository {
     for (final src in sourcePaths) {
       if (token.isCancelled) return;
 
+      final srcIsZip = _isZipPath(src);
       final srcIsSsh = _isSshPath(src);
       final dstIsSsh = _isSshPath(destinationPath);
       final name = _itemName(src);
       final destItemPath = _joinPath(destinationPath, name);
 
       try {
-        if (srcIsSsh && !dstIsSsh) {
+        if (srcIsZip) {
+          // ZIP is read-only; "move" just copies.
+          await for (final status in zipRepository.extractItems(
+            [src],
+            destinationPath,
+            token,
+          )) {
+            yield OperationStatus(
+              totalBytes: status.totalBytes,
+              processedBytes: status.processedBytes,
+              totalItems: total,
+              processedItems: done,
+              currentItem: status.currentItem,
+            );
+          }
+          done++;
+          continue;
+        } else if (srcIsSsh && !dstIsSsh) {
           // SSH → Local: download then delete remote
           await sshRepository.downloadToLocal(src, destItemPath);
           await sshRepository.deleteItem(src);

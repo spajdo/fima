@@ -4,6 +4,7 @@ import 'package:archive/archive_io.dart';
 import 'package:fima/domain/entity/file_operation.dart';
 import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/repository/file_system_repository.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 class ZipFileSystemRepository implements FileSystemRepository {
@@ -133,6 +134,111 @@ class ZipFileSystemRepository implements FileSystemRepository {
       }
     }
     return null;
+  }
+
+  /// Extracts files/directories from inside a ZIP archive to a local
+  /// destination, streaming progress via [OperationStatus].
+  Stream<OperationStatus> extractItems(
+    List<String> sourcePaths,
+    String destinationPath,
+    CancellationToken token,
+  ) async* {
+    // Group source inner-paths by their ZIP file so each archive is read once.
+    final Map<String, List<String>> zipGroups = {};
+    for (final src in sourcePaths) {
+      final result = _extractZipPath(src);
+      if (result == null) continue;
+      zipGroups.putIfAbsent(result.$1, () => []).add(result.$2);
+    }
+
+    // Collect all (archiveEntry, relativeDestPath) pairs and compute totals.
+    final List<(ArchiveFile, String)> work = [];
+    final Set<String> seenEntryNames = {};
+    int totalBytes = 0;
+
+    for (final group in zipGroups.entries) {
+      final zipFilePath = group.key;
+      final innerPaths = group.value;
+
+      final bytes = await File(zipFilePath).readAsBytes();
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      for (final innerPath in innerPaths) {
+        // Determine the base name for the destination folder structure.
+        final trimmedInner = innerPath.endsWith('/')
+            ? innerPath.substring(0, innerPath.length - 1)
+            : innerPath;
+        final parentPrefix = trimmedInner.contains('/')
+            ? trimmedInner.substring(
+                0, trimmedInner.lastIndexOf('/') + 1)
+            : '';
+
+        for (final entry in archive) {
+          final entryName = entry.name;
+
+          // Match: exact file, exact dir entry, or contents inside dir.
+          final bool isMatch = entryName == innerPath ||
+              entryName == '$innerPath/' ||
+              entryName.startsWith(
+                innerPath.endsWith('/') ? innerPath : '$innerPath/');
+
+          if (!isMatch) continue;
+          if (seenEntryNames.contains(entryName)) continue;
+          seenEntryNames.add(entryName);
+
+          // Relative path under the destination.
+          final relPath = entryName.substring(parentPrefix.length);
+          if (relPath.isEmpty) continue;
+
+          work.add((entry, relPath));
+          if (entry.isFile) {
+            totalBytes += entry.size;
+          }
+        }
+      }
+    }
+
+    if (work.isEmpty) return;
+
+    final totalItems = work.length;
+    int processedBytes = 0;
+    int processedItems = 0;
+
+    yield OperationStatus(
+      totalBytes: totalBytes,
+      processedBytes: 0,
+      totalItems: totalItems,
+      processedItems: 0,
+      currentItem: 'Preparing...',
+    );
+
+    for (final (entry, relPath) in work) {
+      if (token.isCancelled) return;
+
+      final destPath = p.join(destinationPath, relPath);
+
+      try {
+        if (!entry.isFile || entry.name.endsWith('/')) {
+          await Directory(destPath).create(recursive: true);
+        } else {
+          await Directory(p.dirname(destPath)).create(recursive: true);
+          final content = entry.content as List<int>;
+          await File(destPath).writeAsBytes(content);
+          processedBytes += entry.size;
+        }
+      } catch (e) {
+        debugPrint('ZIP extract error ($relPath): $e');
+      }
+
+      processedItems++;
+      yield OperationStatus(
+        totalBytes: totalBytes,
+        processedBytes: processedBytes,
+        totalItems: totalItems,
+        processedItems: processedItems,
+        currentItem: p.basename(relPath),
+      );
+    }
   }
 
   @override
