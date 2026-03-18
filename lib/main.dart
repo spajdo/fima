@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:fima/domain/entity/app_theme.dart';
 import 'package:fima/domain/entity/default_themes.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
@@ -6,6 +8,7 @@ import 'package:fima/presentation/widgets/keyboard_handler.dart';
 import 'package:fima/presentation/widgets/main_screen.dart';
 import 'package:fima/presentation/widgets/window_manager_initializer.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -22,6 +25,24 @@ void main() async {
   );
 
   windowManager.waitUntilReadyToShow(windowOptions, () async {});
+
+  // Ignore harmless xterm focus/text input exceptions on Windows
+  PlatformDispatcher.instance.onError = (error, stack) {
+    if (error is PlatformException) {
+      if (error.message?.contains('view ID is null') == true ||
+          error.message?.contains(
+                'Set editing state has been invoked, but no client is set',
+              ) ==
+              true) {
+        return true; // Swallowed
+      }
+    }
+    // Pass everything else to the default handler
+    FlutterError.presentError(
+      FlutterErrorDetails(exception: error, stack: stack),
+    );
+    return true;
+  };
 
   runApp(const ProviderScope(child: FimaApp()));
 }

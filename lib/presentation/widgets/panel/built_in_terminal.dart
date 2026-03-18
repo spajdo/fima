@@ -43,6 +43,7 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
   late final FocusNode _keyListenerFocusNode;
   Pty? _pty;
   bool _ptyStarted = false;
+  bool _viewReady = false;
 
   /// The last CWD we reported to [widget.onDirectoryChanged].
   String _lastKnownCwd = '';
@@ -61,11 +62,6 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
     _terminal = Terminal(maxLines: 10000, onPrivateOSC: _handleOsc);
 
     _startPty();
-
-    // Grab Flutter focus initially (on first frame after build).
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focusNode.requestFocus();
-    });
   }
 
   // ── OSC 7 handler ─────────────────────────────────────────────────────────
@@ -75,12 +71,19 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
   void _handleOsc(String code, List<String> args) {
     if (code != '7' || args.isEmpty) return;
     final uri = Uri.tryParse(args.first);
-    if (uri == null) return;
+    if (uri == null || uri.scheme != 'file') return;
     try {
       final path = uri.toFilePath();
       _onCwdChanged(path);
     } catch (_) {
-      // Ignore malformed URIs.
+      // toFilePath() throws for file://host/C:/… URIs on Windows.
+      // Manually extract the path from the URI path component.
+      if (Platform.isWindows && uri.path.isNotEmpty) {
+        final raw =
+            uri.path.startsWith('/') ? uri.path.substring(1) : uri.path;
+        final path = raw.replaceAll('/', r'\');
+        if (path.isNotEmpty) _onCwdChanged(path);
+      }
     }
   }
 
@@ -91,18 +94,59 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
     return Platform.environment['SHELL'] ?? 'bash';
   }
 
-  void _startPty() {
+  Future<void> _startPty() async {
+    // Adding a short delay to ensure the UI renders the terminal view first
+    await Future.delayed(const Duration(milliseconds: 100));
+
     try {
+      final isWindows = Platform.isWindows;
+      final executable = _shellExecutable();
+      final Environment = {
+        ...Platform.environment,
+        'TERM': 'xterm-256color',
+        'LANG': 'en_US.UTF-8',
+        'LC_ALL': 'en_US.UTF-8',
+        'FIMA_PANEL_ID': widget.isLeftPanel ? 'left' : 'right',
+      };
+
+      // For Windows PowerShell, we inject a prompt override to emit OSC 7 natively.
+      // This eliminates the need for polling and fixes the wmic "Invalid query" crashes.
+      List<String> args = [];
+      if (isWindows && executable.contains('powershell')) {
+        final script = File('${Directory.systemTemp.path}\\fima_osc7.ps1');
+        // Always overwrite: ensures stale/wrong content from a previous run is replaced.
+        script.writeAsStringSync(
+          // OSC 7 with ST terminator (ESC + \): BEL ([char]7) is consumed by
+          // ConPTY on Windows and never reaches xterm. ST ([char]27)+([char]92])
+          // passes through ConPTY correctly.
+          // Fallback: also write CWD to a PID-named temp file so the polling
+          // timer can pick it up even if OSC 7 is still not received.
+          // `global:prompt` ensures the function survives into the interactive
+          // session. When PowerShell runs a -File script it creates a child
+          // scope; without `global:` the function is destroyed when that scope
+          // exits and the default (no-op for OSC 7) prompt is used instead.
+          'function global:prompt { '
+          '[Console]::Write("\$([char]27)]7;file:///\$(\$pwd.Path.Replace(\'\\\', \'/\'))\$([char]27)\$([char]92)"); '
+          'Set-Content -Path "\$env:TEMP\\fima_cwd_\$env:FIMA_PANEL_ID.txt" -Value \$pwd.Path -NoNewline; '
+          'return "PS \$(\$pwd.Path)> " }',
+        );
+        // Dot-source the script via -Command so it executes in the global
+        // scope (same effect as `global:` above, just doubly safe).
+        args = [
+          '-NoExit',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-Command',
+          ". '${script.path}'",
+        ];
+      }
+
       _pty = Pty.start(
-        _shellExecutable(),
+        executable,
+        arguments: args,
         columns: 220,
         rows: 50,
-        environment: {
-          ...Platform.environment,
-          'TERM': 'xterm-256color',
-          'LANG': 'en_US.UTF-8',
-          'LC_ALL': 'en_US.UTF-8',
-        },
+        environment: Environment,
         workingDirectory: widget.initialPath,
       );
 
@@ -118,76 +162,53 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
           _pty!.write(Uint8List.fromList(utf8.encode(data)));
       _terminal.onResize = (w, h, pw, ph) => _pty!.resize(h, w);
 
-      setState(() => _ptyStarted = true);
+      if (mounted) {
+        setState(() => _ptyStarted = true);
 
-      // Start fallback polling after the PTY is ready.
-      _startCwdPolling();
+        // Activate polling fallback for Windows: the PowerShell prompt writes the
+        // CWD to a PID-named temp file on every prompt render. We poll it here as
+        // a belt-and-suspenders backup in case OSC 7 is still not received.
+        if (isWindows) {
+          final panelId = widget.isLeftPanel ? 'left' : 'right';
+          final cwdFile =
+              File('${Directory.systemTemp.path}\\fima_cwd_$panelId.txt');
+          _cwdPollTimer = Timer.periodic(
+            const Duration(milliseconds: 500),
+            (_) async {
+              if (!mounted || _pty == null) return;
+              try {
+                if (await cwdFile.exists()) {
+                  final cwd = (await cwdFile.readAsString()).trim();
+                  if (cwd.isNotEmpty) _onCwdChanged(cwd);
+                }
+              } catch (_) {}
+            },
+          );
+        }
+
+        // DELAY rendering the TerminalView to prevent text input exceptions on Windows
+        // The xterm widget tries to connect to TextInput immediately upon build.
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) {
+            setState(() => _viewReady = true);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                try {
+                  _focusNode.requestFocus();
+                } catch (_) {}
+              }
+            });
+          }
+        });
+      }
     } catch (e) {
       _terminal.write('Error starting terminal: $e\r\n');
-      setState(() => _ptyStarted = true);
-    }
-  }
-
-  /// Starts a 1-second timer that polls the OS for the PTY child's CWD.
-  /// On shells that emit OSC 7 (zsh, fish, bash 5.1+, pwsh) this timer
-  /// fires but immediately returns because [_lastKnownCwd] is already
-  /// up to date, so it has virtually zero overhead in practice.
-  void _startCwdPolling() {
-    _cwdPollTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      _pollCwd();
-    });
-  }
-
-  /// Queries the OS for the current working directory of the PTY process.
-  Future<void> _pollCwd() async {
-    if (_pty == null) return;
-    final pid = _pty!.pid;
-
-    try {
-      String? resolved;
-
-      if (Platform.isLinux) {
-        // Fast path: read the /proc symlink — no subprocess required.
-        resolved = await Link('/proc/$pid/cwd').resolveSymbolicLinks();
-      } else if (Platform.isMacOS) {
-        // lsof reports the CWD of the child shell process.
-        final result = await Process.run('/bin/sh', [
-          '-c',
-          'lsof -a -p $pid -d cwd -Fn 2>/dev/null | grep "^n" | head -1',
-        ]);
-        final stdout = (result.stdout as String).trim();
-        if (stdout.startsWith('n')) {
-          resolved = stdout.substring(1);
-        }
-      } else if (Platform.isWindows) {
-        // wmic reliably returns the WorkingDirectory for any process.
-        final result = await Process.run('wmic', [
-          'process',
-          'where',
-          'processid=$pid',
-          'get',
-          'WorkingDirectory',
-          '/format:list',
-        ], runInShell: true);
-        final stdout = result.stdout as String;
-        for (final line in stdout.split('\n')) {
-          final trimmed = line.trim();
-          if (trimmed.startsWith('WorkingDirectory=')) {
-            resolved = trimmed.substring('WorkingDirectory='.length).trim();
-            // Remove trailing backslash except for drive roots (e.g. C:\).
-            if (resolved.length > 3 && resolved.endsWith('\\')) {
-              resolved = resolved.substring(0, resolved.length - 1);
-            }
-            break;
-          }
-        }
+      if (mounted) {
+        setState(() {
+          _ptyStarted = true;
+          _viewReady = true;
+        });
       }
-
-      if (resolved != null && resolved.isNotEmpty) {
-        _onCwdChanged(resolved);
-      }
-    } catch (_) {
-      // Polling is best-effort; ignore errors silently.
     }
   }
 
@@ -217,6 +238,14 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
   @override
   void dispose() {
     _cwdPollTimer?.cancel();
+    if (Platform.isWindows && _pty != null) {
+      final panelId = widget.isLeftPanel ? 'left' : 'right';
+      final cwdFile =
+          File('${Directory.systemTemp.path}\\fima_cwd_$panelId.txt');
+      try {
+        cwdFile.deleteSync();
+      } catch (_) {}
+    }
     _pty?.kill();
     _focusNode.dispose();
     _keyListenerFocusNode.dispose();
@@ -272,11 +301,15 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
       if (!mounted) return;
       if (_terminalPanelIsActive(next)) {
         // User switched back to our panel → grab focus.
-        _focusNode.requestFocus();
+        try {
+          _focusNode.requestFocus();
+        } catch (_) {}
       } else {
         // User switched to the opposite panel → hand focus directly to the
         // KeyboardHandler so there is no focus gap.
-        keyboardFocusNode.requestFocus();
+        try {
+          keyboardFocusNode.requestFocus();
+        } catch (_) {}
       }
     });
 
@@ -340,11 +373,14 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
             ),
             // ── Terminal view ─────────────────────────────────────────────
             Expanded(
-              child: _ptyStarted
+              child: _ptyStarted && _viewReady
                   ? TerminalView(
                       _terminal,
                       focusNode: _focusNode,
-                      autofocus: true,
+                      autofocus:
+                          false, // We manage focus manually via _focusNode
+                      hardwareKeyboardOnly:
+                          true, // Prevents text input client crash on Windows
                       textStyle: TerminalStyle(
                         fontFamily: 'monospace',
                         fontSize: ref.read(userSettingsProvider).fontSize,
