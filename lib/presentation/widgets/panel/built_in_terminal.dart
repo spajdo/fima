@@ -356,8 +356,16 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
       }
     });
 
-    return KeyboardListener(
-      focusNode: _keyListenerFocusNode,
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) {
+        ref.read(focusProvider.notifier).setActivePanel(
+          widget.isLeftPanel ? ActivePanel.left : ActivePanel.right,
+        );
+        _focusNode.requestFocus();
+      },
+      child: KeyboardListener(
+        focusNode: _keyListenerFocusNode,
       onKeyEvent: (event) {
         if (event is KeyDownEvent &&
             event.logicalKey == LogicalKeyboardKey.escape) {
@@ -464,6 +472,7 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 }
