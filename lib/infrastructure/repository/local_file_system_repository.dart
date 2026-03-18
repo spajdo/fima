@@ -291,7 +291,8 @@ class LocalFileSystemRepository implements FileSystemRepository {
 
     if (type == FileSystemEntityType.file) {
       items = 1;
-      bytes = (await File(path).stat()).size;
+      final fileSize = (await File(path).stat()).size;
+      bytes = fileSize < 0 ? 0 : fileSize;
     } else if (type == FileSystemEntityType.directory) {
       items = 1; // Directory itself
       try {
@@ -300,7 +301,8 @@ class LocalFileSystemRepository implements FileSystemRepository {
         ).list(recursive: true, followLinks: false)) {
           items++;
           if (entity is File) {
-            bytes += (await entity.stat()).size;
+            final entitySize = (await entity.stat()).size;
+            bytes += entitySize < 0 ? 0 : entitySize;
           }
         }
       } catch (e) {
