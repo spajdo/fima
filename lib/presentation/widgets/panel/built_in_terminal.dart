@@ -165,9 +165,11 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
       if (mounted) {
         setState(() => _ptyStarted = true);
 
-        // Activate polling fallback for Windows: the PowerShell prompt writes the
-        // CWD to a PID-named temp file on every prompt render. We poll it here as
-        // a belt-and-suspenders backup in case OSC 7 is still not received.
+        // Activate polling fallback. OSC 7 is the primary mechanism, but not
+        // all shells/configs emit it. Each platform has its own fallback:
+        //  • Windows : PowerShell prompt writes the CWD to a temp file.
+        //  • Linux   : Read /proc/<pid>/cwd symlink (no subprocess).
+        //  • macOS   : Query lsof for the child process's CWD.
         if (isWindows) {
           final panelId = widget.isLeftPanel ? 'left' : 'right';
           final cwdFile =
@@ -183,6 +185,12 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
                 }
               } catch (_) {}
             },
+          );
+        } else {
+          // Linux and macOS: poll every second.
+          _cwdPollTimer = Timer.periodic(
+            const Duration(seconds: 1),
+            (_) => _pollCwd(),
           );
         }
 
@@ -209,6 +217,41 @@ class _BuiltInTerminalWidgetState extends ConsumerState<BuiltInTerminalWidget> {
           _viewReady = true;
         });
       }
+    }
+  }
+
+  // ── Polling fallback (Linux / macOS) ──────────────────────────────────────
+
+  /// Queries the OS for the current working directory of the PTY process.
+  /// Called every second on Linux and macOS as a fallback when OSC 7 is
+  /// not emitted by the shell.
+  Future<void> _pollCwd() async {
+    if (_pty == null) return;
+    final pid = _pty!.pid;
+
+    try {
+      String? resolved;
+
+      if (Platform.isLinux) {
+        // Fast path: read the /proc symlink — no subprocess required.
+        resolved = await Link('/proc/$pid/cwd').resolveSymbolicLinks();
+      } else if (Platform.isMacOS) {
+        // lsof reports the CWD of the child shell process.
+        final result = await Process.run('/bin/sh', [
+          '-c',
+          'lsof -a -p $pid -d cwd -Fn 2>/dev/null | grep "^n" | head -1',
+        ]);
+        final stdout = (result.stdout as String).trim();
+        if (stdout.startsWith('n')) {
+          resolved = stdout.substring(1);
+        }
+      }
+
+      if (resolved != null && resolved.isNotEmpty) {
+        _onCwdChanged(resolved);
+      }
+    } catch (_) {
+      // Polling is best-effort; ignore errors silently.
     }
   }
 
