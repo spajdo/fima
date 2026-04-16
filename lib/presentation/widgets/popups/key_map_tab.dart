@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:fima/domain/entity/key_map_action.dart';
+import 'package:fima/presentation/providers/global_hotkey_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/shortcut_recorder.dart';
 import 'package:flutter/material.dart';
@@ -156,6 +157,9 @@ class _KeyMapTabState extends ConsumerState<KeyMapTab> {
                       onShortcutChanged: (newShortcut) async {
                         if (newShortcut.isEmpty) {
                           settingsController.removeKeyMapShortcut(action.id);
+                          if (action.isGlobal) {
+                            await reregisterGlobalHotkey(ref);
+                          }
                           widget.onShortcutChanged?.call();
                           return;
                         }
@@ -185,6 +189,12 @@ class _KeyMapTabState extends ConsumerState<KeyMapTab> {
                               action.id,
                               newShortcut,
                             );
+                            if (action.isGlobal) {
+                              final success = await reregisterGlobalHotkey(ref);
+                              if (!success && context.mounted) {
+                                _showGlobalHotkeyError(context);
+                              }
+                            }
                             widget.onShortcutChanged?.call();
                           }
                         } else {
@@ -192,11 +202,20 @@ class _KeyMapTabState extends ConsumerState<KeyMapTab> {
                             action.id,
                             newShortcut,
                           );
+                          if (action.isGlobal) {
+                            final success = await reregisterGlobalHotkey(ref);
+                            if (!success && context.mounted) {
+                              _showGlobalHotkeyError(context);
+                            }
+                          }
                           widget.onShortcutChanged?.call();
                         }
                       },
-                      onClearShortcut: () {
+                      onClearShortcut: () async {
                         settingsController.removeKeyMapShortcut(action.id);
+                        if (action.isGlobal) {
+                          await reregisterGlobalHotkey(ref);
+                        }
                         widget.onShortcutChanged?.call();
                       },
                     );
@@ -220,6 +239,18 @@ class _KeyMapTabState extends ConsumerState<KeyMapTab> {
           ),
         ),
       ],
+    );
+  }
+
+  void _showGlobalHotkeyError(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Could not register global shortcut. '
+          'It may be in use by another application.',
+        ),
+        duration: Duration(seconds: 4),
+      ),
     );
   }
 
@@ -580,7 +611,51 @@ class _KeyMapRow extends StatelessWidget {
         children: [
           Expanded(
             flex: 2,
-            child: Text(action.label, style: theme.textTheme.bodyMedium),
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    action.label,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+                if (action.isGlobal) ...[
+                  const SizedBox(width: 6),
+                  Tooltip(
+                    message:
+                        'This shortcut works system-wide, even when the app is not focused',
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.secondaryContainer,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.public,
+                            size: 10,
+                            color: theme.colorScheme.onSecondaryContainer,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            'Global',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSecondaryContainer,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
           Expanded(
             flex: 2,

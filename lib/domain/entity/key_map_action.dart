@@ -14,6 +14,11 @@ class KeyMapAction {
   /// user-configurable (e.g. "Go to Trash").
   final bool showInKeymap;
 
+  /// Whether this action is handled globally by the OS hotkey system.
+  /// Global actions are registered system-wide and work even when the app
+  /// is not focused. They are NOT handled by KeyboardHandler.
+  final bool isGlobal;
+
   const KeyMapAction({
     required this.id,
     required this.label,
@@ -23,6 +28,7 @@ class KeyMapAction {
     this.showInOmniPanel = false,
     this.omniPanelOrder,
     this.showInKeymap = true,
+    this.isGlobal = false,
   });
 
   String get defaultShortcut {
@@ -358,6 +364,16 @@ class KeyMapActionDefs {
       defaultShortcutMacOS: '⌘ + R',
       showInOmniPanel: true,
       omniPanelOrder: 27,
+    ),
+    KeyMapAction(
+      id: 'globalToggleWindow',
+      label: 'Toggle Window (Global)',
+      defaultShortcutLinux: 'Ctrl + Alt + F1',
+      defaultShortcutMacOS: '⌃ + ⌘ + F1',
+      isEditable: true,
+      showInOmniPanel: false,
+      showInKeymap: true,
+      isGlobal: true,
     ),
   ];
 

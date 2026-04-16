@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   flutter_secure_storage_windows
+  hotkey_manager_windows
   irondash_engine_context
   pasteboard
   screen_retriever

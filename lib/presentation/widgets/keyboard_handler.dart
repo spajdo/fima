@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:fima/domain/entity/file_operation.dart';
+import 'package:fima/domain/entity/key_map_action.dart';
 import 'package:fima/domain/entity/workspace.dart';
 import 'package:fima/infrastructure/service/keyboard_utils.dart';
 import 'package:fima/infrastructure/service/application_service.dart';
@@ -208,6 +209,13 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
               .read(userSettingsProvider.notifier)
               .findActionByShortcut(currentShortcut);
           if (actionId != null) {
+            // Skip global actions -- they are handled by GlobalHotkeyService,
+            // not the in-app keyboard handler.
+            final action = KeyMapActionDefs.getById(actionId);
+            if (action != null && action.isGlobal) {
+              return KeyEventResult.ignored;
+            }
+
             final result = _handleCustomShortcut(
               ref,
               context,

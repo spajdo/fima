@@ -1,6 +1,7 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <shobjidl.h>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -36,7 +37,56 @@ bool FlutterWindow::OnCreate() {
   // window is shown. It is a no-op if the first frame hasn't completed yet.
   flutter_controller_->ForceRedraw();
 
+  // Register the "fima/window" method channel for native window operations.
+  RegisterWindowMethodChannel();
+
   return true;
+}
+
+void FlutterWindow::RegisterWindowMethodChannel() {
+  auto messenger = flutter_controller_->engine()->messenger();
+  auto channel = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      messenger, "fima/window",
+      &flutter::StandardMethodCodec::GetInstance());
+
+  channel->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+        if (call.method_name() == "moveToCurrentDesktop") {
+          MoveToCurrentDesktop();
+          result->Success();
+        } else {
+          result->NotImplemented();
+        }
+      });
+
+  window_channel_ = std::move(channel);
+}
+
+void FlutterWindow::MoveToCurrentDesktop() {
+  HWND hwnd = GetHandle();
+  if (hwnd == nullptr) return;
+
+  // Check whether the window is already on the current virtual desktop.
+  IVirtualDesktopManager* pDesktopManager = nullptr;
+  HRESULT hr = CoCreateInstance(
+      CLSID_VirtualDesktopManager, nullptr, CLSCTX_ALL,
+      IID_IVirtualDesktopManager,
+      reinterpret_cast<void**>(&pDesktopManager));
+
+  if (SUCCEEDED(hr) && pDesktopManager != nullptr) {
+    BOOL isOnCurrentDesktop = FALSE;
+    hr = pDesktopManager->IsWindowOnCurrentVirtualDesktop(hwnd, &isOnCurrentDesktop);
+
+    if (SUCCEEDED(hr) && !isOnCurrentDesktop) {
+      // Hide and re-show the window so Windows places it on the current
+      // virtual desktop instead of switching the user to another desktop.
+      ShowWindow(hwnd, SW_HIDE);
+      ShowWindow(hwnd, SW_SHOW);
+    }
+
+    pDesktopManager->Release();
+  }
 }
 
 void FlutterWindow::OnDestroy() {

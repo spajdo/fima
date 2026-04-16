@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:fima/presentation/providers/file_system_provider.dart';
+import 'package:fima/presentation/providers/global_hotkey_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -65,12 +66,16 @@ class _WindowManagerInitializerState
       await windowManager.show();
       await windowManager.focus();
 
+      // Initialize the global hotkey (reads settings, registers the OS hotkey)
+      ref.read(globalHotkeyServiceProvider);
+
       _isInitialized = true;
     } catch (e) {
       // If there's an error applying window state, still show the window
       debugPrint('Error applying window state: $e');
       await windowManager.show();
       await windowManager.focus();
+      ref.read(globalHotkeyServiceProvider);
       _isInitialized = true;
     }
   }
