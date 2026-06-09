@@ -38,7 +38,7 @@ dependencies:
   intl: ^0.20.2
   path_provider: ^2.1.5
   file_icon: ^1.0.0
-  font_awesome_flutter: ^10.12.0
+  font_awesome_flutter: ^11.0.0
   path: ^1.9.1
   state_notifier: ^1.0.0
   open_file: ^3.5.9
