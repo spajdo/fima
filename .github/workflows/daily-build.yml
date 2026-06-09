@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write           # Needed to create/update the nightly release
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # ─────────────────────────────────────────────
   # Linux: portable zip + .deb package
