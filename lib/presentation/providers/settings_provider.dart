@@ -166,12 +166,32 @@ class SettingsController extends StateNotifier<UserSettings> {
       );
     }
 
-    // Sort by visitsCount (descending)
-    newIndexes.sort((a, b) => b.visitsCount.compareTo(a.visitsCount));
+    // Sort primarily by visitsCount (descending), then by lastVisited (descending)
+    newIndexes.sort((a, b) {
+      final visitCompare = b.visitsCount.compareTo(a.visitsCount);
+      if (visitCompare != 0) return visitCompare;
+      return b.lastVisited.compareTo(a.lastVisited);
+    });
 
     // Prune if exceeds maxPathIndexes
-    if (newIndexes.length > state.maxPathIndexes) {
-      newIndexes.removeRange(state.maxPathIndexes, newIndexes.length);
+    while (newIndexes.length > state.maxPathIndexes) {
+      // Protect the most recently visited paths (e.g. roughly 30% of max items)
+      final protectedCount = (state.maxPathIndexes / 3).ceil().clamp(1, 20);
+      
+      final timeSorted = List<PathIndexEntry>.from(newIndexes)
+        ..sort((a, b) => b.lastVisited.compareTo(a.lastVisited));
+      final protectedPaths = timeSorted.take(protectedCount).map((e) => e.path).toSet();
+
+      // Find the item with the lowest visitsCount that is NOT protected
+      int targetIndex = newIndexes.length - 1;
+      for (int i = newIndexes.length - 1; i >= 0; i--) {
+        if (!protectedPaths.contains(newIndexes[i].path)) {
+          targetIndex = i;
+          break;
+        }
+      }
+      
+      newIndexes.removeAt(targetIndex);
     }
 
     state = state.copyWith(pathIndexes: newIndexes);
