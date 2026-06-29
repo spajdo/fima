@@ -59,20 +59,62 @@ class DraggableFileItem extends ConsumerWidget {
       ),
       dragItemProvider: (request) async {
         ref.read(dragStateProvider.notifier).startInternalDrag(panelId, paths);
-        final dragItem = DragItem(localData: paths);
-
-        // Provide a native file URI for local (non-SSH) paths so the OS
-        // can accept the drag into external applications.
-        if (!item.path.startsWith('ssh://') && paths.isNotEmpty) {
-          dragItem.add(Formats.fileUri(Uri.file(paths.first)));
-        }
-
-        // Plain-text fallback: all paths, one per line.
-        dragItem.add(Formats.plainText(paths.join('\n')));
-
-        return dragItem;
+        // Provide a base drag item. The actual multi-item configuration 
+        // is built inside DraggableWidget's onDragConfiguration.
+        return DragItem(localData: paths);
       },
       child: DraggableWidget(
+        onDragConfiguration: (configuration, session) {
+          if (configuration.items.isEmpty || paths.isEmpty) {
+            return configuration;
+          }
+
+          final originalItem = configuration.items.first;
+          final newItems = <DragConfigurationItem>[];
+
+          // Helper to clone snapshot so we don't dispose the same ui.Image twice
+          TargetedWidgetSnapshot cloneSnapshot(TargetedWidgetSnapshot orig) {
+             if (orig.snapshot.isImage) {
+               final clonedImage = orig.snapshot.image.clone();
+               return TargetedWidgetSnapshot(
+                 WidgetSnapshot.image(clonedImage),
+                 orig.rect,
+               );
+             }
+             return orig; // Fallback for render object snapshot (web), which doesn't dispose an image
+          }
+
+          for (int i = 0; i < paths.length; i++) {
+            final path = paths[i];
+            final dragItem = DragItem(localData: paths);
+            
+            if (!path.startsWith('ssh://')) {
+              dragItem.add(Formats.fileUri(Uri.file(path)));
+            }
+            dragItem.add(Formats.plainText(path));
+
+            // First item gets the original snapshot, others get clones
+            final isFirst = i == 0;
+            final image = isFirst ? originalItem.image : cloneSnapshot(originalItem.image);
+            final liftImage = originalItem.liftImage == null 
+                ? null 
+                : (isFirst ? originalItem.liftImage! : cloneSnapshot(originalItem.liftImage!));
+
+            newItems.add(
+              DragConfigurationItem(
+                item: dragItem,
+                image: image,
+                liftImage: liftImage,
+              ),
+            );
+          }
+
+          return DragConfiguration(
+            items: newItems,
+            allowedOperations: configuration.allowedOperations,
+            options: configuration.options,
+          );
+        },
         child: child,
       ),
     );
