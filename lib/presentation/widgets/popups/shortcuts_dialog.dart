@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
+import 'package:fima/presentation/widgets/popups/about_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -170,7 +171,7 @@ class _ShortcutsDialogState extends ConsumerState<ShortcutsDialog> {
         for (final cat in cats) ...[
           Container(
             width: double.infinity,
-            color: theme.borderColor.withOpacity(0.3),
+            color: theme.borderColor.withValues(alpha: 0.3),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             child: Text(cat.title, style: headerStyle),
           ),
@@ -207,7 +208,7 @@ class _ShortcutsDialogState extends ConsumerState<ShortcutsDialog> {
           border: Border.all(color: theme.borderColor, width: 1),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.35),
+              color: Colors.black.withValues(alpha: 0.35),
               blurRadius: 30,
               offset: const Offset(0, 14),
             ),
@@ -272,13 +273,13 @@ class _ShortcutsDialogState extends ConsumerState<ShortcutsDialog> {
                       Container(
                         width: 1,
                         margin: const EdgeInsets.symmetric(horizontal: 8),
-                        color: theme.borderColor.withOpacity(0.4),
+                        color: theme.borderColor.withValues(alpha: 0.4),
                       ),
                       Expanded(child: buildColumn(col2)),
                       Container(
                         width: 1,
                         margin: const EdgeInsets.symmetric(horizontal: 8),
-                        color: theme.borderColor.withOpacity(0.4),
+                        color: theme.borderColor.withValues(alpha: 0.4),
                       ),
                       Expanded(child: buildColumn(col3)),
                     ],
@@ -298,8 +299,34 @@ class _ShortcutsDialogState extends ConsumerState<ShortcutsDialog> {
                 ),
               ),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  OutlinedButton.icon(
+                    onPressed: () => showFimaAboutDialog(context),
+                    icon: Icon(
+                      Icons.info_outline,
+                      size: 15,
+                      color: theme.accentColor,
+                    ),
+                    label: Text(
+                      'About fima',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                        color: theme.textColor,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: theme.borderColor),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
                   FilledButton(
                     focusNode: _okFocusNode,
                     onPressed: () => Navigator.of(context).pop(),
