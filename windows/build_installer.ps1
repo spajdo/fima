@@ -15,25 +15,54 @@ Write-Host "Building Inno Setup installer for Fima version $version..."
 
 $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 if (-not (Test-Path $iscc)) {
-    $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue)?.Source
+    $iscc = "C:\Program Files\Inno Setup 6\ISCC.exe"
+}
+if (-not (Test-Path $iscc)) {
+    $cmd = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+    if ($cmd) {
+        $iscc = $cmd.Source
+    }
+}
+if ((-not $iscc -or -not (Test-Path $iscc)) -and $env:ChocolateyInstall) {
+    $chocoIscc = Join-Path $env:ChocolateyInstall "bin\iscc.exe"
+    if (Test-Path $chocoIscc) {
+        $iscc = $chocoIscc
+    }
 }
 
-if (-not $iscc) {
+if (-not $iscc -or -not (Test-Path $iscc)) {
     Write-Error "ISCC.exe not found. Please install Inno Setup 6."
     exit 1
 }
 
-$outputBase = if ($OutputFile) {
-    [System.IO.Path]::GetFileNameWithoutExtension($OutputFile)
+if ($OutputFile) {
+    $outputBase = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile)
 } else {
-    "fima-$version-setup"
+    $outputBase = "fima-$version-setup"
 }
 
-& $iscc "/DMyAppVersion=$version" "/DMyOutputBaseFilename=$outputBase" (Join-Path $ScriptDir "setup.iss")
+$issFile = Join-Path $ScriptDir "setup.iss"
+& $iscc "/DMyAppVersion=$version" "/DMyOutputBaseFilename=$outputBase" $issFile
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "ISCC failed with exit code $LASTEXITCODE"
+    exit $LASTEXITCODE
+}
 
 $builtExe = Join-Path $ScriptDir "dist\windows\$outputBase.exe"
-$destExe = if ($OutputFile) { $OutputFile } else { Join-Path $RootDir "$outputBase.exe" }
+if (-not (Test-Path $builtExe)) {
+    Write-Error "Installer binary not found at $builtExe"
+    exit 1
+}
+
+if ($OutputFile) {
+    if ([System.IO.Path]::IsPathRooted($OutputFile)) {
+        $destExe = $OutputFile
+    } else {
+        $destExe = Join-Path $RootDir $OutputFile
+    }
+} else {
+    $destExe = Join-Path $RootDir "$outputBase.exe"
+}
 
 Move-Item -Force $builtExe $destExe
 Write-Host "Successfully created Windows installer: $destExe"
-

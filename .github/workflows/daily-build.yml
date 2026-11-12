@@ -130,7 +130,7 @@ jobs:
 
       - name: Build installer
         run: |
-          powershell -File windows/build_installer.ps1 -OutputFile "fima-${{ steps.version.outputs.version }}-setup.exe"
+          powershell -ExecutionPolicy Bypass -File windows/build_installer.ps1 -OutputFile "fima-${{ steps.version.outputs.version }}-setup.exe"
           Copy-Item "fima-${{ steps.version.outputs.version }}-setup.exe" "fima-setup.exe"
         shell: powershell
 
