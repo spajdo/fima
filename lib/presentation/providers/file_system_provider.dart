@@ -18,6 +18,7 @@ import 'package:fima/domain/entity/panel_operation_progress.dart';
 import 'package:fima/domain/entity/remote_connection.dart';
 
 import 'package:fima/infrastructure/repository/compound_file_system_repository.dart';
+import 'package:fima/infrastructure/service/item_metadata_service.dart';
 
 final fileSystemRepositoryProvider = Provider<FileSystemRepository>((ref) {
   return CompoundFileSystemRepository(LocalFileSystemRepository());
@@ -182,10 +183,15 @@ class PanelController extends StateNotifier<PanelState> {
     bool preserveFocusedIndex = false,
     bool preserveSelection = false,
   }) {
+    final nextDirectorySizes = path == state.currentPath
+        ? Map<String, int>.from(state.directorySizes)
+        : <String, int>{};
+
     final sortedItems = _sortItems(
       items,
       state.sortColumn,
       state.sortAscending,
+      directorySizes: nextDirectorySizes,
     );
 
     int newFocusedIndex;
@@ -220,6 +226,10 @@ class PanelController extends StateNotifier<PanelState> {
       isEditingPath: false,
       visitedPaths: newVisitedPaths,
       quickFilterText: '',
+      directorySizes: nextDirectorySizes,
+      calculatingDirectories: path == state.currentPath
+          ? state.calculatingDirectories
+          : const {},
     );
 
     _allItems = sortedItems;
@@ -472,7 +482,12 @@ class PanelController extends StateNotifier<PanelState> {
 
   void sort(SortColumn column) {
     final ascending = state.sortColumn == column ? !state.sortAscending : true;
-    final sortedItems = _sortItems(state.items, column, ascending);
+    final sortedItems = _sortItems(
+      state.items,
+      column,
+      ascending,
+      directorySizes: state.directorySizes,
+    );
     state = state.copyWith(
       sortColumn: column,
       sortAscending: ascending,
@@ -490,7 +505,12 @@ class PanelController extends StateNotifier<PanelState> {
     if (state.quickFilterText.isEmpty) {
       _allItems = sortedItems;
     } else {
-      _allItems = _sortItems(_allItems, column, ascending);
+      _allItems = _sortItems(
+        _allItems,
+        column,
+        ascending,
+        directorySizes: state.directorySizes,
+      );
       // Re-apply the filter
       setQuickFilter(state.quickFilterText);
     }
@@ -546,8 +566,9 @@ class PanelController extends StateNotifier<PanelState> {
   List<FileSystemItem> _sortItems(
     List<FileSystemItem> items,
     SortColumn column,
-    bool ascending,
-  ) {
+    bool ascending, {
+    Map<String, int> directorySizes = const {},
+  }) {
     final parentItem = items.where((i) => i.isParentDetails).toList();
     final directories = items
         .where((i) => i.isDirectory && !i.isParentDetails)
@@ -563,7 +584,9 @@ class PanelController extends StateNotifier<PanelState> {
           result = a.name.toLowerCase().compareTo(b.name.toLowerCase());
           break;
         case SortColumn.size:
-          result = a.size.compareTo(b.size);
+          final aSize = a.isDirectory ? (directorySizes[a.path] ?? -1) : a.size;
+          final bSize = b.isDirectory ? (directorySizes[b.path] ?? -1) : b.size;
+          result = aSize.compareTo(bSize);
           break;
         case SortColumn.modified:
           result = a.modified.compareTo(b.modified);
@@ -612,6 +635,78 @@ class PanelController extends StateNotifier<PanelState> {
     }
     final item = state.items[state.focusedIndex];
     toggleSelection(item.path);
+    if (item.isDirectory && !item.isParentDetails) {
+      unawaited(calculateDirectorySize(item.path));
+    }
+  }
+
+  /// Calculates the recursive size of the directory at [dirPath] in a
+  /// background isolate and caches it in [PanelState.directorySizes].
+  Future<void> calculateDirectorySize(String dirPath) async {
+    if (dirPath.isEmpty || dirPath.startsWith('ssh://')) return;
+    if (state.calculatingDirectories.contains(dirPath)) return;
+
+    final startPath = state.currentPath;
+    final nextCalc = Set<String>.from(state.calculatingDirectories)
+      ..add(dirPath);
+    state = state.copyWith(calculatingDirectories: nextCalc);
+
+    try {
+      final totalBytes = await ItemMetadataService.calculateSingleDirectorySize(
+        dirPath,
+      );
+      if (!mounted || state.currentPath != startPath) return;
+
+      final nextSizes = Map<String, int>.from(state.directorySizes)
+        ..[dirPath] = totalBytes;
+      final doneCalc = Set<String>.from(state.calculatingDirectories)
+        ..remove(dirPath);
+
+      var updatedItems = state.items;
+      if (state.sortColumn == SortColumn.size) {
+        _allItems = _sortItems(
+          _allItems,
+          state.sortColumn,
+          state.sortAscending,
+          directorySizes: nextSizes,
+        );
+        updatedItems = _sortItems(
+          state.items,
+          state.sortColumn,
+          state.sortAscending,
+          directorySizes: nextSizes,
+        );
+      }
+
+      state = state.copyWith(
+        directorySizes: nextSizes,
+        calculatingDirectories: doneCalc,
+        items: updatedItems,
+      );
+    } catch (e) {
+      debugPrint('Error calculating directory size for $dirPath: $e');
+      if (!mounted || state.currentPath != startPath) return;
+      final doneCalc = Set<String>.from(state.calculatingDirectories)
+        ..remove(dirPath);
+      state = state.copyWith(calculatingDirectories: doneCalc);
+    }
+  }
+
+  /// Calculates recursive sizes for all directories currently listed in the panel.
+  Future<void> calculateAllDirectorySizes() async {
+    if (state.currentPath.isEmpty || state.currentPath.startsWith('ssh://')) {
+      return;
+    }
+    final dirs = state.items
+        .where((item) => item.isDirectory && !item.isParentDetails)
+        .map((item) => item.path)
+        .toList();
+    if (dirs.isEmpty) return;
+
+    for (final dirPath in dirs) {
+      if (!mounted) return;
+      await calculateDirectorySize(dirPath);
+    }
   }
 
   void selectAll() {

@@ -1,3 +1,4 @@
+import 'package:fima/domain/entity/bookmark.dart';
 import 'package:fima/domain/entity/key_map_action.dart';
 import 'package:fima/domain/entity/panel_tab.dart';
 import 'package:fima/domain/entity/path_index_entry.dart';
@@ -20,6 +21,7 @@ class UserSettings {
   final List<PathIndexEntry> pathIndexes;
   final int maxPathIndexes;
   final List<Workspace> workspaces;
+  final List<Bookmark> bookmarks;
   final String themeName;
   final Map<String, String> keyMap;
   final bool useBuiltInTerminal;
@@ -42,6 +44,7 @@ class UserSettings {
     this.pathIndexes = const [],
     this.maxPathIndexes = 50,
     this.workspaces = const [],
+    this.bookmarks = const [],
     this.themeName = 'Light',
     this.keyMap = const {},
     this.useBuiltInTerminal = false,
@@ -112,6 +115,7 @@ class UserSettings {
       pathIndexes: const [],
       maxPathIndexes: 50,
       workspaces: const [],
+      bookmarks: const [],
       themeName: 'Light',
       keyMap: const {},
       useBuiltInTerminal: false,
@@ -191,6 +195,9 @@ class UserSettings {
       workspaces: (json['workspaces'] as List? ?? [])
           .map((e) => Workspace.fromJson(e as Map<String, dynamic>))
           .toList(),
+      bookmarks: (json['bookmarks'] as List? ?? [])
+          .map((e) => Bookmark.fromJson(e as Map<String, dynamic>))
+          .toList(),
       themeName: json['themeName'] as String? ?? 'Light',
       keyMap: parsedKeyMap,
       useBuiltInTerminal: json['useBuiltInTerminal'] as bool? ?? false,
@@ -219,6 +226,7 @@ class UserSettings {
       'pathIndexes': pathIndexes.map((e) => e.toJson()).toList(),
       'maxPathIndexes': maxPathIndexes,
       'workspaces': workspaces.map((e) => e.toJson()).toList(),
+      'bookmarks': bookmarks.map((e) => e.toJson()).toList(),
       'themeName': themeName,
       'keyMap': keyMap,
       'useBuiltInTerminal': useBuiltInTerminal,
@@ -243,6 +251,7 @@ class UserSettings {
     List<PathIndexEntry>? pathIndexes,
     int? maxPathIndexes,
     List<Workspace>? workspaces,
+    List<Bookmark>? bookmarks,
     String? themeName,
     Map<String, String>? keyMap,
     bool? useBuiltInTerminal,
@@ -265,6 +274,7 @@ class UserSettings {
       pathIndexes: pathIndexes ?? this.pathIndexes,
       maxPathIndexes: maxPathIndexes ?? this.maxPathIndexes,
       workspaces: workspaces ?? this.workspaces,
+      bookmarks: bookmarks ?? this.bookmarks,
       themeName: themeName ?? this.themeName,
       keyMap: keyMap ?? this.keyMap,
       useBuiltInTerminal: useBuiltInTerminal ?? this.useBuiltInTerminal,

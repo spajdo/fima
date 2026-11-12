@@ -9,6 +9,7 @@ import 'package:fima/infrastructure/service/system_clipboard_service.dart';
 import 'package:fima/presentation/providers/clipboard_actions.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
+import 'package:fima/presentation/providers/panel_feature_actions.dart';
 
 import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
@@ -610,6 +611,25 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         return KeyEventResult.handled;
       case 'showInfo':
         _showInfoDialog(context, ref, activeTabId);
+        return KeyEventResult.handled;
+      case 'saveBookmark':
+        PanelFeatureActions.promptSaveBookmark(context, ref);
+        return KeyEventResult.handled;
+      case 'bookmarkDialog':
+        showDialog(
+          context: context,
+          barrierColor: Colors.transparent,
+          builder: (context) => const OmniDialog(initialText: 'b '),
+        );
+        return KeyEventResult.handled;
+      case 'calculateDirectorySizes':
+        panelController.calculateAllDirectorySizes();
+        return KeyEventResult.handled;
+      case 'compareFiles':
+        PanelFeatureActions.openCompareFiles(context, ref);
+        return KeyEventResult.handled;
+      case 'editPermissions':
+        PanelFeatureActions.openEditPermissions(context, ref);
         return KeyEventResult.handled;
       default:
         return null;

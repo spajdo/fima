@@ -1,4 +1,5 @@
 import 'package:fima/domain/entity/app_action.dart';
+import 'package:fima/domain/entity/bookmark.dart';
 import 'package:fima/domain/entity/path_index_entry.dart';
 import 'package:fima/domain/entity/remote_connection.dart';
 import 'package:fima/domain/entity/workspace.dart';
@@ -16,7 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-enum OmniMode { path, action, workspace, remote }
+enum OmniMode { path, action, workspace, remote, bookmark }
 
 enum WorkspaceAction { none, edit, delete }
 
@@ -37,6 +38,7 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
   List<PathIndexEntry> _filteredPaths = [];
   List<AppAction> _filteredActions = [];
   List<Workspace> _filteredWorkspaces = [];
+  List<Bookmark> _filteredBookmarks = [];
   List<RemoteConnection> _filteredConnections = [];
   int _selectedIndex = 0;
   WorkspaceAction _focusedAction = WorkspaceAction.none;
@@ -44,7 +46,8 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
   OmniMode get _mode {
     final text = _controller.text;
     if (text.startsWith('w ')) return OmniMode.workspace;
-    if (text.startsWith('r ') || text.startsWith('r ')) return OmniMode.remote;
+    if (text.startsWith('b ')) return OmniMode.bookmark;
+    if (text.startsWith('r ')) return OmniMode.remote;
     if (text.startsWith('>')) return OmniMode.action;
     return OmniMode.path;
   }
@@ -52,6 +55,14 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
   String get _workspaceQuery {
     final text = _controller.text;
     if (_mode == OmniMode.workspace) {
+      return text.substring(2).toLowerCase();
+    }
+    return '';
+  }
+
+  String get _bookmarkQuery {
+    final text = _controller.text;
+    if (_mode == OmniMode.bookmark) {
       return text.substring(2).toLowerCase();
     }
     return '';
@@ -109,6 +120,8 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
         }).toList();
         _filteredPaths = [];
         _filteredWorkspaces = [];
+        _filteredBookmarks = [];
+        _filteredConnections = [];
         _selectedIndex = 0;
       });
     } else if (_mode == OmniMode.workspace) {
@@ -121,6 +134,22 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
         }).toList();
         _filteredPaths = [];
         _filteredActions = [];
+        _filteredBookmarks = [];
+        _filteredConnections = [];
+        _selectedIndex = 0;
+      });
+    } else if (_mode == OmniMode.bookmark) {
+      final query = _bookmarkQuery;
+      final allBookmarks = ref.read(userSettingsProvider).bookmarks;
+
+      setState(() {
+        _filteredBookmarks = allBookmarks.where((bookmark) {
+          return bookmark.name.toLowerCase().contains(query) ||
+              bookmark.path.toLowerCase().contains(query);
+        }).toList();
+        _filteredPaths = [];
+        _filteredActions = [];
+        _filteredWorkspaces = [];
         _filteredConnections = [];
         _selectedIndex = 0;
       });
@@ -136,6 +165,7 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
         _filteredPaths = [];
         _filteredActions = [];
         _filteredWorkspaces = [];
+        _filteredBookmarks = [];
         _selectedIndex = 0;
       });
     } else {
@@ -145,6 +175,7 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
       setState(() {
         _filteredActions = [];
         _filteredWorkspaces = [];
+        _filteredBookmarks = [];
         _filteredConnections = [];
         _filteredPaths = allPaths.where((entry) {
           return entry.path.toLowerCase().contains(query);
@@ -162,6 +193,17 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
           _showRenameDialog(workspace);
         } else if (_focusedAction == WorkspaceAction.delete) {
           _deleteWorkspace(workspace);
+        }
+      }
+      return;
+    }
+    if (_mode == OmniMode.bookmark && _focusedAction != WorkspaceAction.none) {
+      if (_selectedIndex < _filteredBookmarks.length) {
+        final bookmark = _filteredBookmarks[_selectedIndex];
+        if (_focusedAction == WorkspaceAction.edit) {
+          _showRenameBookmarkDialog(bookmark);
+        } else if (_focusedAction == WorkspaceAction.delete) {
+          _deleteBookmark(bookmark);
         }
       }
       return;
@@ -193,6 +235,13 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
         final workspace = _filteredWorkspaces[_selectedIndex];
         Navigator.of(context).pop();
         _loadWorkspace(workspace);
+      }
+    } else if (_mode == OmniMode.bookmark) {
+      if (_focusedAction == WorkspaceAction.none &&
+          _filteredBookmarks.isNotEmpty) {
+        final bookmark = _filteredBookmarks[_selectedIndex];
+        Navigator.of(context).pop();
+        _navigateToPath(bookmark.path);
       }
     } else if (_mode == OmniMode.remote) {
       if (_focusedAction == WorkspaceAction.none &&
@@ -243,6 +292,18 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
     _updateFilter();
   }
 
+  void _deleteBookmark(Bookmark bookmark) {
+    ref.read(userSettingsProvider.notifier).deleteBookmark(bookmark.name);
+    _updateFilter();
+  }
+
+  void _renameBookmark(Bookmark bookmark, String newName) {
+    ref
+        .read(userSettingsProvider.notifier)
+        .updateBookmark(bookmark.name, bookmark.copyWith(name: newName));
+    _updateFilter();
+  }
+
   void _scrollToSelected(double itemHeight) {
     if (!_scrollController.hasClients) return;
 
@@ -264,6 +325,8 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
         ? _filteredActions.length
         : _mode == OmniMode.workspace
         ? _filteredWorkspaces.length
+        : _mode == OmniMode.bookmark
+        ? _filteredBookmarks.length
         : _mode == OmniMode.remote
         ? _filteredConnections.length
         : _filteredPaths.length;
@@ -311,6 +374,8 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                     const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
                       if ((_mode == OmniMode.workspace &&
                               _selectedIndex < _filteredWorkspaces.length) ||
+                          (_mode == OmniMode.bookmark &&
+                              _selectedIndex < _filteredBookmarks.length) ||
                           (_mode == OmniMode.remote &&
                               _selectedIndex < _filteredConnections.length)) {
                         setState(() {
@@ -327,6 +392,8 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                     const SingleActivator(LogicalKeyboardKey.arrowRight): () {
                       if ((_mode == OmniMode.workspace &&
                               _selectedIndex < _filteredWorkspaces.length) ||
+                          (_mode == OmniMode.bookmark &&
+                              _selectedIndex < _filteredBookmarks.length) ||
                           (_mode == OmniMode.remote &&
                               _selectedIndex < _filteredConnections.length)) {
                         setState(() {
@@ -352,6 +419,8 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                       border: InputBorder.none,
                       hintText: _mode == OmniMode.workspace
                           ? 'Search workspaces...'
+                          : _mode == OmniMode.bookmark
+                          ? 'Search bookmarks...'
                           : _mode == OmniMode.remote
                           ? 'Search connections...'
                           : 'Type to search...',
@@ -362,6 +431,8 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                       ),
                       prefixIcon: _mode == OmniMode.workspace
                           ? Icon(Icons.work, color: fimaTheme.textColor)
+                          : _mode == OmniMode.bookmark
+                          ? Icon(Icons.bookmark, color: fimaTheme.textColor)
                           : _mode == OmniMode.remote
                           ? Icon(Icons.dns, color: fimaTheme.textColor)
                           : null,
@@ -415,6 +486,28 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
                           },
                           onDelete: () {
                             _deleteWorkspace(workspace);
+                          },
+                        );
+                      } else if (_mode == OmniMode.bookmark) {
+                        final bookmark = _filteredBookmarks[index];
+                        return _buildBookmarkItem(
+                          bookmark: bookmark,
+                          isSelected: isSelected,
+                          focusedAction: index == _selectedIndex
+                              ? _focusedAction
+                              : WorkspaceAction.none,
+                          onTap: () {
+                            setState(() {
+                              _selectedIndex = index;
+                              _focusedAction = WorkspaceAction.none;
+                            });
+                            _handleSubmit();
+                          },
+                          onEdit: () {
+                            _showRenameBookmarkDialog(bookmark);
+                          },
+                          onDelete: () {
+                            _deleteBookmark(bookmark);
                           },
                         );
                       } else if (_mode == OmniMode.remote) {
@@ -475,6 +568,95 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
         _renameWorkspace(workspace, newName.toString());
       }
     });
+  }
+
+  void _showRenameBookmarkDialog(Bookmark bookmark) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.transparent,
+      builder: (context) => TextInputDialog(
+        title: 'Rename Bookmark',
+        label: 'Bookmark Name',
+        okButtonLabel: 'Rename',
+        initialValue: bookmark.name,
+      ),
+    ).then((newName) {
+      if (newName != null && newName.toString().isNotEmpty) {
+        _renameBookmark(bookmark, newName.toString());
+      }
+    });
+  }
+
+  Widget _buildBookmarkItem({
+    required Bookmark bookmark,
+    required bool isSelected,
+    required WorkspaceAction focusedAction,
+    required VoidCallback onTap,
+    required VoidCallback onEdit,
+    required VoidCallback onDelete,
+  }) {
+    final fimaTheme = ref.watch(themeProvider);
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        color: isSelected ? fimaTheme.accentColor.withValues(alpha: 0.1) : null,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(Icons.bookmark, size: 22, color: fimaTheme.accentColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    bookmark.name,
+                    style: TextStyle(
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                      fontSize: 14,
+                      color: fimaTheme.textColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    bookmark.path,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: fimaTheme.secondaryTextColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildActionButton(
+                  icon: Icons.edit,
+                  tooltip: 'Rename',
+                  isFocused: focusedAction == WorkspaceAction.edit,
+                  onTap: onEdit,
+                ),
+                const SizedBox(width: 8),
+                _buildActionButton(
+                  icon: Icons.delete,
+                  tooltip: 'Delete',
+                  isFocused: focusedAction == WorkspaceAction.delete,
+                  onTap: onDelete,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildListItem({

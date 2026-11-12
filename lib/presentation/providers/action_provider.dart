@@ -12,6 +12,7 @@ import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
+import 'package:fima/presentation/providers/panel_feature_actions.dart';
 import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart';
@@ -146,6 +147,25 @@ class ActionGenerator {
         break;
       case 'showInfo':
         _showItemInfo(activeTabId, context);
+        break;
+      case 'saveBookmark':
+        PanelFeatureActions.promptSaveBookmark(context, ref);
+        break;
+      case 'bookmarkDialog':
+        showDialog(
+          context: context,
+          barrierColor: Colors.transparent,
+          builder: (context) => const OmniDialog(initialText: 'b '),
+        );
+        break;
+      case 'calculateDirectorySizes':
+        panelController.calculateAllDirectorySizes();
+        break;
+      case 'compareFiles':
+        PanelFeatureActions.openCompareFiles(context, ref);
+        break;
+      case 'editPermissions':
+        PanelFeatureActions.openEditPermissions(context, ref);
         break;
       case 'compress':
         _compressItems(activeTabId, panelController, context);

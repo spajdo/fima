@@ -5,6 +5,7 @@ import 'package:fima/infrastructure/service/item_metadata_service.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
+import 'package:fima/presentation/widgets/popups/permissions_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,10 +46,18 @@ class _ItemInfoDialogState extends ConsumerState<ItemInfoDialog> {
 
   late ItemMetadata _metadata;
   DirectoryStatsHandle? _statsHandle;
+  DirectoryStatsHandle? _checksumHandle;
+  FileChecksums? _checksums;
+  bool _isCalculatingChecksums = false;
+  String? _checksumError;
+  late final TextEditingController _verifyHashController;
+  String _verifyHashInput = '';
+  bool _showPermissionsEditor = false;
 
   @override
   void initState() {
     super.initState();
+    _verifyHashController = TextEditingController();
     _metadata = ItemMetadataService.buildInitialMetadata(
       items: widget.items,
       currentPath: widget.currentPath,
@@ -59,7 +68,35 @@ class _ItemInfoDialogState extends ConsumerState<ItemInfoDialog> {
   @override
   void dispose() {
     _statsHandle?.cancel();
+    _checksumHandle?.cancel();
+    _verifyHashController.dispose();
     super.dispose();
+  }
+
+  Future<void> _calculateChecksums() async {
+    if (_isCalculatingChecksums) return;
+    setState(() {
+      _isCalculatingChecksums = true;
+      _checksumError = null;
+    });
+
+    _checksumHandle?.cancel();
+    _checksumHandle = await ItemMetadataService.startChecksumCalculation(
+      filePath: _metadata.path,
+      onDone: (result, error) {
+        if (!mounted) return;
+        setState(() {
+          _isCalculatingChecksums = false;
+          _checksums = result;
+          _checksumError = error;
+        });
+      },
+    );
+  }
+
+  void _copyHash(String label, String hashValue) {
+    Clipboard.setData(ClipboardData(text: hashValue));
+    ref.read(overlayProvider.notifier).showToast('$label copied');
   }
 
   Future<void> _loadMetadata() async {
@@ -208,8 +245,8 @@ class _ItemInfoDialogState extends ConsumerState<ItemInfoDialog> {
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         child: Container(
-          width: 480,
-          constraints: const BoxConstraints(maxHeight: 620),
+          width: 520,
+          constraints: const BoxConstraints(maxHeight: 680),
           decoration: BoxDecoration(
             color: fimaTheme.backgroundColor,
             borderRadius: BorderRadius.circular(10),
@@ -402,6 +439,14 @@ class _ItemInfoDialogState extends ConsumerState<ItemInfoDialog> {
                         ),
                       ],
 
+                      if (!meta.isMultiSelection &&
+                          !meta.isDirectory &&
+                          !meta.isRemote &&
+                          !meta.isInsideZip) ...[
+                        const SizedBox(height: 12),
+                        _buildChecksumsSection(fimaTheme),
+                      ],
+
                       if (hasPermissionsOrOwner) ...[
                         const SizedBox(height: 12),
                         _SectionCard(
@@ -409,12 +454,89 @@ class _ItemInfoDialogState extends ConsumerState<ItemInfoDialog> {
                           theme: fimaTheme,
                           children: [
                             if (meta.permissions != null)
-                              _InfoRow(
+                              _InfoRowWidget(
                                 label: 'Permissions',
-                                value: meta.permissions!,
                                 theme: fimaTheme,
-                                monospace: true,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: SelectableText(
+                                        meta.permissions!,
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          fontFamily: 'monospace',
+                                          color: fimaTheme.textColor,
+                                        ),
+                                      ),
+                                    ),
+                                    if (meta.canEditPermissions &&
+                                        meta.modeBits != null)
+                                      TextButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _showPermissionsEditor =
+                                                !_showPermissionsEditor;
+                                          });
+                                        },
+                                        style: TextButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 2,
+                                          ),
+                                          minimumSize: Size.zero,
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                        child: Text(
+                                          _showPermissionsEditor
+                                              ? 'Hide Editor'
+                                              : 'Edit...',
+                                          style: TextStyle(
+                                            fontSize: 11.5,
+                                            color: fimaTheme.accentColor,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ),
+                            if (_showPermissionsEditor &&
+                                meta.canEditPermissions &&
+                                meta.modeBits != null) ...[
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: fimaTheme.backgroundColor,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: fimaTheme.borderColor,
+                                  ),
+                                ),
+                                child: PosixPermissionsEditor(
+                                  itemPath: meta.path,
+                                  initialModeBits: meta.modeBits!,
+                                  onApplied: (newBits) {
+                                    setState(() {
+                                      _metadata = _metadata.copyWith(
+                                        modeBits: newBits,
+                                        permissions:
+                                            ItemMetadataService.formatPermissionsFromBits(
+                                              newBits,
+                                            ),
+                                        isReadOnly: (newBits & 0x92) == 0,
+                                      );
+                                    });
+                                    ref
+                                        .read(overlayProvider.notifier)
+                                        .showToast(
+                                          'Permissions updated: ${ItemMetadataService.formatPermissionsFromBits(newBits)}',
+                                        );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                            ],
                             if (meta.ownerUid != null || meta.ownerGid != null)
                               _InfoRow(
                                 label: 'Owner',
@@ -557,6 +679,203 @@ class _ItemInfoDialogState extends ConsumerState<ItemInfoDialog> {
       theme: fimaTheme,
     );
   }
+
+  Widget _buildChecksumsSection(FimaTheme fimaTheme) {
+    final checksums = _checksums;
+    final verifyQuery = _verifyHashInput.trim().toLowerCase();
+    String? verifyStatusText;
+    Color? verifyStatusColor;
+    if (checksums != null && verifyQuery.isNotEmpty) {
+      if (verifyQuery == checksums.md5Hex.toLowerCase()) {
+        verifyStatusText = 'Matches MD5';
+        verifyStatusColor = Colors.green;
+      } else if (verifyQuery == checksums.sha256Hex.toLowerCase()) {
+        verifyStatusText = 'Matches SHA-256';
+        verifyStatusColor = Colors.green;
+      } else {
+        verifyStatusText = 'Does not match';
+        verifyStatusColor = Colors.redAccent;
+      }
+    }
+
+    return _SectionCard(
+      title: 'CHECKSUMS',
+      theme: fimaTheme,
+      children: [
+        if (checksums == null && !_isCalculatingChecksums)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: _calculateChecksums,
+              icon: Icon(
+                Icons.fingerprint,
+                size: 15,
+                color: fimaTheme.accentColor,
+              ),
+              label: Text(
+                'Calculate MD5 & SHA-256',
+                style: TextStyle(fontSize: 12, color: fimaTheme.textColor),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: fimaTheme.borderColor),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                minimumSize: const Size(0, 32),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+            ),
+          ),
+        if (_isCalculatingChecksums)
+          Row(
+            children: [
+              SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.8,
+                  color: fimaTheme.accentColor,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Calculating MD5 & SHA-256...',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: fimaTheme.secondaryTextColor,
+                ),
+              ),
+            ],
+          ),
+        if (_checksumError != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            _checksumError!,
+            style: const TextStyle(fontSize: 12, color: Colors.redAccent),
+          ),
+        ],
+        if (checksums != null) ...[
+          _buildHashRow('MD5', checksums.md5Hex, fimaTheme),
+          _buildHashRow('SHA-256', checksums.sha256Hex, fimaTheme),
+          const SizedBox(height: 8),
+          _InfoRowWidget(
+            label: 'Verify Hash',
+            theme: fimaTheme,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: _verifyHashController,
+                  onChanged: (value) {
+                    setState(() {
+                      _verifyHashInput = value;
+                    });
+                  },
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontFamily: 'monospace',
+                    color: fimaTheme.textColor,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Paste expected MD5 or SHA-256 hash...',
+                    hintStyle: TextStyle(
+                      fontSize: 11.5,
+                      fontFamily: null,
+                      color: fimaTheme.secondaryTextColor,
+                    ),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 7,
+                    ),
+                    filled: true,
+                    fillColor: fimaTheme.backgroundColor,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(5),
+                      borderSide: BorderSide(color: fimaTheme.borderColor),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(5),
+                      borderSide: BorderSide(
+                        color: verifyStatusColor ?? fimaTheme.borderColor,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(5),
+                      borderSide: BorderSide(
+                        color: verifyStatusColor ?? fimaTheme.accentColor,
+                      ),
+                    ),
+                  ),
+                ),
+                if (verifyStatusText != null && verifyStatusColor != null) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        verifyStatusColor == Colors.green
+                            ? Icons.check_circle_outline
+                            : Icons.error_outline,
+                        size: 13,
+                        color: verifyStatusColor,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        verifyStatusText,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: verifyStatusColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildHashRow(String label, String hashValue, FimaTheme fimaTheme) {
+    return _InfoRowWidget(
+      label: label,
+      theme: fimaTheme,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: SelectableText(
+              hashValue,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontFamily: 'monospace',
+                color: fimaTheme.textColor,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          InkWell(
+            onTap: () => _copyHash(label, hashValue),
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.all(2),
+              child: Icon(
+                Icons.copy,
+                size: 13,
+                color: fimaTheme.secondaryTextColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _SectionCard extends StatelessWidget {
@@ -603,13 +922,11 @@ class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
   final FimaTheme theme;
-  final bool monospace;
 
   const _InfoRow({
     required this.label,
     required this.value,
     required this.theme,
-    this.monospace = false,
   });
 
   @override
@@ -619,11 +936,7 @@ class _InfoRow extends StatelessWidget {
       theme: theme,
       child: SelectableText(
         value,
-        style: TextStyle(
-          fontSize: 12.5,
-          fontFamily: monospace ? 'monospace' : null,
-          color: theme.textColor,
-        ),
+        style: TextStyle(fontSize: 12.5, color: theme.textColor),
       ),
     );
   }

@@ -343,13 +343,25 @@ void main() {
         await tester.pump();
 
         // Initially 1 tab: tab bar is hidden
-        expect(find.text('alpha'), findsNothing);
+        expect(
+          find.descendant(
+            of: find.byType(PanelTabBar),
+            matching: find.text('alpha'),
+          ),
+          findsNothing,
+        );
 
         // Cmd/Ctrl + T -> creates second tab named 'alpha'
         await _sendCombo(tester, [primaryMod], LogicalKeyboardKey.keyT);
         expect(ref.read(panelTabsProvider('left')).tabs.length, 2);
         expect(ref.read(panelTabsProvider('left')).activeTabIndex, 1);
-        expect(find.text('alpha'), findsNWidgets(2));
+        expect(
+          find.descendant(
+            of: find.byType(PanelTabBar),
+            matching: find.text('alpha'),
+          ),
+          findsNWidgets(2),
+        );
 
         // Navigate second tab to /home/user/beta
         final tab2Id = ref.read(panelTabsProvider('left')).activeTabId;
@@ -357,8 +369,20 @@ void main() {
             .read(panelStateProvider(tab2Id).notifier)
             .loadPath('/home/user/beta');
         await tester.pumpAndSettle();
-        expect(find.text('alpha'), findsOneWidget);
-        expect(find.text('beta'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(PanelTabBar),
+            matching: find.text('alpha'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: find.byType(PanelTabBar),
+            matching: find.text('beta'),
+          ),
+          findsOneWidget,
+        );
 
         // Ctrl + Shift + Tab -> switch right-to-left (to tab 0: alpha)
         await _sendCombo(tester, [

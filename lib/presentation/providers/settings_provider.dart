@@ -1,3 +1,4 @@
+import 'package:fima/domain/entity/bookmark.dart';
 import 'package:fima/domain/entity/key_map_action.dart';
 import 'package:fima/domain/entity/panel_tab.dart';
 import 'package:fima/domain/entity/path_index_entry.dart';
@@ -215,6 +216,34 @@ class SettingsController extends StateNotifier<UserSettings> {
     final List<Workspace> newWorkspaces = List.from(state.workspaces);
     newWorkspaces.removeWhere((w) => w.name == name);
     state = state.copyWith(workspaces: newWorkspaces);
+    save();
+  }
+
+  /// Add a new bookmark (replaces any existing bookmark with the same name)
+  void addBookmark(Bookmark bookmark) {
+    final List<Bookmark> newBookmarks = List.from(state.bookmarks);
+    newBookmarks.removeWhere((b) => b.name == bookmark.name);
+    newBookmarks.add(bookmark);
+    state = state.copyWith(bookmarks: newBookmarks);
+    save();
+  }
+
+  /// Update an existing bookmark
+  void updateBookmark(String oldName, Bookmark bookmark) {
+    final List<Bookmark> newBookmarks = List.from(state.bookmarks);
+    final index = newBookmarks.indexWhere((b) => b.name == oldName);
+    if (index != -1) {
+      newBookmarks[index] = bookmark;
+      state = state.copyWith(bookmarks: newBookmarks);
+      save();
+    }
+  }
+
+  /// Delete a bookmark by name
+  void deleteBookmark(String name) {
+    final List<Bookmark> newBookmarks = List.from(state.bookmarks);
+    newBookmarks.removeWhere((b) => b.name == name);
+    state = state.copyWith(bookmarks: newBookmarks);
     save();
   }
 

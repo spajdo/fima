@@ -126,6 +126,22 @@ void main() {
 
   setUp(() {
     repo = _FakeFileSystemRepository({
+      '/home': [
+        FileSystemItem(
+          path: '/home/user',
+          name: 'user',
+          size: 0,
+          modified: DateTime(2026),
+          isDirectory: true,
+        ),
+        FileSystemItem(
+          path: '/home/other',
+          name: 'other',
+          size: 0,
+          modified: DateTime(2026),
+          isDirectory: true,
+        ),
+      ],
       '/home/user': [
         FileSystemItem(
           path: '/home/user/docs',
@@ -156,31 +172,52 @@ void main() {
     });
   });
 
-  testWidgets('Pencil icon is removed from path bar', (tester) async {
+  testWidgets('Pencil icon is removed from path bar and breadcrumbs render', (
+    tester,
+  ) async {
     await _pumpApp(tester, repo);
 
     expect(find.byIcon(Icons.edit), findsNothing);
-    expect(find.text('/home/user'), findsOneWidget);
-    expect(find.text('/home/other'), findsOneWidget);
+    expect(find.text('user'), findsOneWidget);
+    expect(find.text('other'), findsOneWidget);
   });
 
-  testWidgets('Clicking path bar activates edit mode and selects all text', (
+  testWidgets('Clicking a breadcrumb segment navigates to that directory', (
     tester,
   ) async {
     final ref = await _pumpApp(tester, repo);
 
-    await tester.tap(find.text('/home/user'));
+    await tester.tap(find.text('home').first);
     await tester.pumpAndSettle();
 
     final leftTabId = ref.read(panelTabsProvider('left')).activeTabId;
-    expect(ref.read(panelStateProvider(leftTabId)).isEditingPath, isTrue);
-    final textField = tester.widget<TextField>(find.byType(TextField));
-    expect(textField.controller?.text, '/home/user');
-    expect(
-      textField.controller?.selection,
-      const TextSelection(baseOffset: 0, extentOffset: '/home/user'.length),
-    );
+    final leftState = ref.read(panelStateProvider(leftTabId));
+    expect(leftState.currentPath, '/home');
+    expect(leftState.isEditingPath, isFalse);
+    expect(find.byType(TextField), findsNothing);
   });
+
+  testWidgets(
+    'Clicking empty path bar area activates edit mode and selects all text',
+    (tester) async {
+      final ref = await _pumpApp(tester, repo);
+
+      final rightEdge = tester.getTopRight(
+        find.byKey(const Key('path_bar_edit_area_left')),
+      );
+      await tester.tapAt(rightEdge + const Offset(-10, 10));
+      await tester.pumpAndSettle();
+
+      final leftTabId = ref.read(panelTabsProvider('left')).activeTabId;
+      expect(ref.read(panelStateProvider(leftTabId)).isEditingPath, isTrue);
+      final textField = tester.widget<TextField>(find.byType(TextField));
+      expect(textField.controller?.text, '/home/user');
+      expect(
+        textField.controller?.selection,
+        const TextSelection(baseOffset: 0, extentOffset: '/home/user'.length),
+      );
+    },
+  );
 
   testWidgets('Shortcut Cmd+L / Ctrl+L activates path bar and selects all', (
     tester,
@@ -214,7 +251,10 @@ void main() {
   ) async {
     final ref = await _pumpApp(tester, repo);
 
-    await tester.tap(find.text('/home/user'));
+    final rightEdge = tester.getTopRight(
+      find.byKey(const Key('path_bar_edit_area_left')),
+    );
+    await tester.tapAt(rightEdge + const Offset(-10, 10));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField), '/tmp/target');
@@ -234,7 +274,10 @@ void main() {
   ) async {
     final ref = await _pumpApp(tester, repo);
 
-    await tester.tap(find.text('/home/user'));
+    final rightEdge = tester.getTopRight(
+      find.byKey(const Key('path_bar_edit_area_left')),
+    );
+    await tester.tapAt(rightEdge + const Offset(-10, 10));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField), '/does/not/exist');
@@ -267,7 +310,10 @@ void main() {
   ) async {
     final ref = await _pumpApp(tester, repo);
 
-    await tester.tap(find.text('/home/user'));
+    final rightEdge = tester.getTopRight(
+      find.byKey(const Key('path_bar_edit_area_left')),
+    );
+    await tester.tapAt(rightEdge + const Offset(-10, 10));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField), '/some/typed/path');
@@ -282,7 +328,7 @@ void main() {
     expect(leftState.currentPath, '/home/user');
     expect(leftState.isEditingPath, isFalse);
     expect(find.byType(TextField), findsNothing);
-    expect(find.text('/home/user'), findsOneWidget);
+    expect(find.text('user'), findsOneWidget);
   });
 
   testWidgets('Pressing Escape reverts path bar to current open path', (
@@ -290,7 +336,10 @@ void main() {
   ) async {
     final ref = await _pumpApp(tester, repo);
 
-    await tester.tap(find.text('/home/user'));
+    final rightEdge = tester.getTopRight(
+      find.byKey(const Key('path_bar_edit_area_left')),
+    );
+    await tester.tapAt(rightEdge + const Offset(-10, 10));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField), '/some/other/path');
@@ -302,7 +351,7 @@ void main() {
     expect(leftState.currentPath, '/home/user');
     expect(leftState.isEditingPath, isFalse);
     expect(find.byType(TextField), findsNothing);
-    expect(find.text('/home/user'), findsOneWidget);
+    expect(find.text('user'), findsOneWidget);
   });
 
   testWidgets(
@@ -311,13 +360,19 @@ void main() {
       final ref = await _pumpApp(tester, repo);
 
       // Start editing left panel path bar
-      await tester.tap(find.text('/home/user'));
+      final leftEdge = tester.getTopRight(
+        find.byKey(const Key('path_bar_edit_area_left')),
+      );
+      await tester.tapAt(leftEdge + const Offset(-10, 10));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '/edited/left');
       await tester.pump();
 
       // Click right panel path bar
-      await tester.tap(find.text('/home/other'));
+      final rightEdge = tester.getTopRight(
+        find.byKey(const Key('path_bar_edit_area_right')),
+      );
+      await tester.tapAt(rightEdge + const Offset(-10, 10));
       await tester.pumpAndSettle();
 
       final leftTabId = ref.read(panelTabsProvider('left')).activeTabId;
@@ -343,7 +398,10 @@ void main() {
   ) async {
     await _pumpApp(tester, repo);
 
-    await tester.tap(find.text('/home/user'));
+    final rightEdge = tester.getTopRight(
+      find.byKey(const Key('path_bar_edit_area_left')),
+    );
+    await tester.tapAt(rightEdge + const Offset(-10, 10));
     await tester.pumpAndSettle();
 
     final textField = tester.widget<TextField>(find.byType(TextField));

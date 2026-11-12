@@ -15,6 +15,8 @@ class PanelState {
   final List<String> visitedPaths;
   final String quickFilterText;
   final PanelOperationProgress? operationProgress;
+  final Map<String, int> directorySizes;
+  final Set<String> calculatingDirectories;
 
   const PanelState({
     this.currentPath = '',
@@ -28,6 +30,8 @@ class PanelState {
     this.visitedPaths = const [],
     this.quickFilterText = '',
     this.operationProgress,
+    this.directorySizes = const {},
+    this.calculatingDirectories = const {},
   });
 
   PanelState copyWith({
@@ -43,6 +47,8 @@ class PanelState {
     String? quickFilterText,
     PanelOperationProgress? operationProgress,
     bool clearOperationProgress = false,
+    Map<String, int>? directorySizes,
+    Set<String>? calculatingDirectories,
   }) {
     return PanelState(
       currentPath: currentPath ?? this.currentPath,
@@ -58,6 +64,9 @@ class PanelState {
       operationProgress: clearOperationProgress
           ? null
           : (operationProgress ?? this.operationProgress),
+      directorySizes: directorySizes ?? this.directorySizes,
+      calculatingDirectories:
+          calculatingDirectories ?? this.calculatingDirectories,
     );
   }
 
@@ -74,6 +83,8 @@ class PanelState {
       visitedPaths: visitedPaths,
       quickFilterText: quickFilterText,
       operationProgress: operationProgress,
+      directorySizes: directorySizes,
+      calculatingDirectories: calculatingDirectories,
     );
   }
 }

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
+import 'package:crypto/crypto.dart';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/entity/remote_connection.dart';
@@ -31,6 +32,7 @@ class ItemMetadata {
   final DateTime? accessed;
   final DateTime? changed;
   final String? permissions;
+  final int? modeBits;
   final String? symlinkTarget;
   final (int, int)? imageDimensions;
   final int? ownerUid;
@@ -60,6 +62,7 @@ class ItemMetadata {
     this.accessed,
     this.changed,
     this.permissions,
+    this.modeBits,
     this.symlinkTarget,
     this.imageDimensions,
     this.ownerUid,
@@ -70,6 +73,9 @@ class ItemMetadata {
     this.zipUncompressedSize,
     this.isCalculatingStats = false,
   });
+
+  bool get canEditPermissions =>
+      !isMultiSelection && !isInsideZip && (isRemote || !Platform.isWindows);
 
   ItemMetadata copyWith({
     String? name,
@@ -90,6 +96,7 @@ class ItemMetadata {
     DateTime? accessed,
     DateTime? changed,
     String? permissions,
+    int? modeBits,
     String? symlinkTarget,
     (int, int)? imageDimensions,
     int? ownerUid,
@@ -119,6 +126,7 @@ class ItemMetadata {
       accessed: accessed ?? this.accessed,
       changed: changed ?? this.changed,
       permissions: permissions ?? this.permissions,
+      modeBits: modeBits ?? this.modeBits,
       symlinkTarget: symlinkTarget ?? this.symlinkTarget,
       imageDimensions: imageDimensions ?? this.imageDimensions,
       ownerUid: ownerUid ?? this.ownerUid,
@@ -130,6 +138,13 @@ class ItemMetadata {
       isCalculatingStats: isCalculatingStats ?? this.isCalculatingStats,
     );
   }
+}
+
+class FileChecksums {
+  final String md5Hex;
+  final String sha256Hex;
+
+  const FileChecksums({required this.md5Hex, required this.sha256Hex});
 }
 
 class DirectoryStatsHandle {
@@ -411,6 +426,7 @@ class ItemMetadataService {
         accessed: stat.accessed,
         changed: stat.changed,
         permissions: permissions,
+        modeBits: !Platform.isWindows ? (stat.mode & 0xFFF) : null,
         isReadOnly: isReadOnly,
         imageDimensions: imageDims,
         fileCount: zipFiles ?? base.fileCount,
@@ -481,6 +497,7 @@ class ItemMetadataService {
         permissions: attrs.mode != null
             ? _formatSftpPermissions(attrs.mode!)
             : null,
+        modeBits: attrs.mode != null ? (attrs.mode!.value & 0xFFF) : null,
         ownerUid: attrs.userID,
         ownerGid: attrs.groupID,
         isCalculatingStats: false,
@@ -524,6 +541,121 @@ class ItemMetadataService {
       debugPrint('Failed to spawn stats isolate: $e');
       receivePort.close();
       onProgress(0, 0, 0, true);
+    }
+
+    return DirectoryStatsHandle(() {
+      cancelled = true;
+      isolate?.kill(priority: Isolate.immediate);
+      receivePort.close();
+    });
+  }
+
+  static String formatPermissionsFromBits(int bits) {
+    final perms = bits & 0xFFF;
+    String bitChar(int mask, String ch) => (perms & mask) != 0 ? ch : '-';
+    final rwx = [
+      bitChar(0x100, 'r'),
+      bitChar(0x080, 'w'),
+      bitChar(0x040, 'x'),
+      bitChar(0x020, 'r'),
+      bitChar(0x010, 'w'),
+      bitChar(0x008, 'x'),
+      bitChar(0x004, 'r'),
+      bitChar(0x002, 'w'),
+      bitChar(0x001, 'x'),
+    ].join();
+    final octal = perms.toRadixString(8).padLeft(4, '0');
+    return '$rwx ($octal)';
+  }
+
+  /// Applies POSIX permission bits (e.g. `0755`) to a local file/directory or
+  /// remote SSH SFTP item.
+  static Future<void> setPermissions({
+    required String path,
+    required int modeBits,
+    FileSystemRepository? repository,
+  }) async {
+    final masked = modeBits & 0xFFF;
+    if (path.startsWith('ssh://')) {
+      if (repository is! CompoundFileSystemRepository) {
+        throw StateError('SSH repository not available');
+      }
+      final connId = RemoteConnection.connectionIdFromSshUrl(path);
+      final remotePath = RemoteConnection.remotePathFromSshUrl(path);
+      final sftp = repository.sshRepository.getSftpClientFor(connId);
+      if (sftp == null) {
+        throw StateError('SSH session is not connected: $connId');
+      }
+      await sftp.setStat(
+        remotePath,
+        SftpFileAttrs(mode: SftpFileMode.value(masked)),
+      );
+      return;
+    }
+
+    if (Platform.isWindows) {
+      throw UnsupportedError('chmod is not supported on Windows');
+    }
+
+    final octal = masked.toRadixString(8).padLeft(4, '0');
+    final result = await Process.run('chmod', [octal, path]);
+    if (result.exitCode != 0) {
+      final err = result.stderr.toString().trim();
+      throw FileSystemException(
+        err.isNotEmpty ? err : 'chmod failed with exit code ${result.exitCode}',
+        path,
+      );
+    }
+  }
+
+  /// Calculates total recursive byte size of a single local or in-ZIP directory.
+  static Future<int> calculateSingleDirectorySize(String path) async {
+    if (path.startsWith('ssh://')) return 0;
+    if (isZipPath(path)) {
+      final split = splitZipPath(path);
+      if (split == null) return 0;
+      final zipStats = await compute(_readZipStats, (split.$1, split.$2));
+      return zipStats?.$3 ?? 0;
+    }
+    return compute(_calculateLocalDirectorySize, path);
+  }
+
+  /// Calculates MD5 and SHA-256 digests for [filePath] in a background isolate.
+  static Future<DirectoryStatsHandle> startChecksumCalculation({
+    required String filePath,
+    required void Function(FileChecksums? result, String? error) onDone,
+  }) async {
+    final receivePort = ReceivePort();
+    Isolate? isolate;
+    bool cancelled = false;
+
+    receivePort.listen((message) {
+      if (cancelled) return;
+      if (message is Map<String, dynamic>) {
+        final error = message['error'] as String?;
+        if (error != null) {
+          onDone(null, error);
+        } else {
+          onDone(
+            FileChecksums(
+              md5Hex: message['md5'] as String,
+              sha256Hex: message['sha256'] as String,
+            ),
+            null,
+          );
+        }
+        receivePort.close();
+      }
+    });
+
+    try {
+      isolate = await Isolate.spawn(_isolateCalculateChecksums, {
+        'sendPort': receivePort.sendPort,
+        'filePath': filePath,
+      });
+    } catch (e) {
+      receivePort.close();
+      onDone(null, e.toString());
     }
 
     return DirectoryStatsHandle(() {
@@ -680,4 +812,73 @@ void _isolateCalculateStats(Map<String, dynamic> args) {
   }
 
   sendUpdate(isDone: true);
+}
+
+int _calculateLocalDirectorySize(String rootPath) {
+  int totalBytes = 0;
+  try {
+    final type = FileSystemEntity.typeSync(rootPath, followLinks: false);
+    if (type == FileSystemEntityType.file) {
+      return File(rootPath).lengthSync();
+    }
+    if (type != FileSystemEntityType.directory) return 0;
+    final stack = <Directory>[Directory(rootPath)];
+    while (stack.isNotEmpty) {
+      final dir = stack.removeLast();
+      try {
+        for (final entity in dir.listSync(followLinks: false)) {
+          if (entity is File) {
+            try {
+              totalBytes += entity.lengthSync();
+            } catch (_) {}
+          } else if (entity is Directory) {
+            stack.add(entity);
+          }
+        }
+      } catch (_) {
+        // Skip unreadable subdirectories
+      }
+    }
+  } catch (_) {}
+  return totalBytes;
+}
+
+class _SingleDigestSink implements Sink<Digest> {
+  Digest? digest;
+
+  @override
+  void add(Digest data) {
+    digest = data;
+  }
+
+  @override
+  void close() {}
+}
+
+Future<void> _isolateCalculateChecksums(Map<String, dynamic> args) async {
+  final sendPort = args['sendPort'] as SendPort;
+  final filePath = args['filePath'] as String;
+
+  try {
+    final md5Sink = _SingleDigestSink();
+    final shaSink = _SingleDigestSink();
+    final md5Input = md5.startChunkedConversion(md5Sink);
+    final shaInput = sha256.startChunkedConversion(shaSink);
+
+    final stream = File(filePath).openRead();
+    await for (final chunk in stream) {
+      md5Input.add(chunk);
+      shaInput.add(chunk);
+    }
+
+    md5Input.close();
+    shaInput.close();
+
+    sendPort.send({
+      'md5': md5Sink.digest.toString(),
+      'sha256': shaSink.digest.toString(),
+    });
+  } catch (e) {
+    sendPort.send({'error': e.toString()});
+  }
 }

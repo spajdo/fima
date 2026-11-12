@@ -42,6 +42,7 @@ class FilePanel extends ConsumerStatefulWidget {
 class _FilePanelState extends ConsumerState<FilePanel> {
   final DateFormat _dateFormat = DateFormat('yyyy-MM-dd HH:mm');
   final ScrollController _scrollController = ScrollController();
+  final ScrollController _breadcrumbScrollController = ScrollController();
   // Explicit Flutter FocusNode for this panel. When the user taps to
   // activate this panel we call requestFocus() so that Flutter focus
   // leaves any other focused widget (e.g. the terminal's TerminalView)
@@ -92,6 +93,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     _pathFocusNode.dispose();
     _pathController.dispose();
     _scrollController.dispose();
+    _breadcrumbScrollController.dispose();
     _panelFocusNode.dispose();
     super.dispose();
   }
@@ -530,6 +532,49 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     }
   }
 
+  List<_PathBreadcrumb> _parseBreadcrumbs(String rawPath) {
+    if (rawPath.isEmpty) return const [];
+
+    // Windows drive path (e.g. C:\Users\name)
+    final driveMatch = RegExp(
+      r'^([A-Za-z]:)(?:[/\\](.*))?$',
+    ).firstMatch(rawPath);
+    if (driveMatch != null) {
+      final drive = driveMatch.group(1)!;
+      final rest = driveMatch.group(2) ?? '';
+      final breadcrumbs = <_PathBreadcrumb>[
+        _PathBreadcrumb(label: drive, targetPath: '$drive\\'),
+      ];
+      final parts = rest
+          .split(RegExp(r'[/\\]+'))
+          .where((part) => part.isNotEmpty)
+          .toList();
+      var running = '$drive\\';
+      for (int i = 0; i < parts.length; i++) {
+        final part = parts[i];
+        running = i == 0 ? '$drive\\$part' : '$running\\$part';
+        breadcrumbs.add(_PathBreadcrumb(label: part, targetPath: running));
+      }
+      return breadcrumbs;
+    }
+
+    // POSIX path (e.g. /Users/misotech/Projects or /)
+    if (rawPath.startsWith('/')) {
+      final breadcrumbs = <_PathBreadcrumb>[
+        const _PathBreadcrumb(label: '/', targetPath: '/'),
+      ];
+      final parts = rawPath.split('/').where((part) => part.isNotEmpty);
+      var running = '';
+      for (final part in parts) {
+        running = '$running/$part';
+        breadcrumbs.add(_PathBreadcrumb(label: part, targetPath: running));
+      }
+      return breadcrumbs;
+    }
+
+    return [_PathBreadcrumb(label: rawPath, targetPath: rawPath)];
+  }
+
   Widget _buildLocalPathHeader(
     PanelState panelState,
     PanelController controller,
@@ -546,6 +591,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
         : panelState.isEditingPath
         ? fimaTheme.accentColor
         : fimaTheme.borderColor;
+    final breadcrumbs = _parseBreadcrumbs(panelState.currentPath);
 
     return Container(
       constraints: BoxConstraints(minHeight: fontSize + 16),
@@ -585,18 +631,14 @@ class _FilePanelState extends ConsumerState<FilePanel> {
               onEditingComplete: () {},
               onTapOutside: (_) => _cancelPathEditing(restoreFocus: false),
             )
-          : MouseRegion(
+          : breadcrumbs.isEmpty
+          ? MouseRegion(
               cursor: SystemMouseCursors.text,
               child: GestureDetector(
+                key: Key('path_bar_edit_area_${widget.panelId}'),
                 behavior: HitTestBehavior.opaque,
                 onTap: () {
-                  ref
-                      .read(focusProvider.notifier)
-                      .setActivePanel(
-                        widget.panelId == 'left'
-                            ? ActivePanel.left
-                            : ActivePanel.right,
-                      );
+                  _activateThisPanel();
                   controller.startEditingPath();
                 },
                 child: Container(
@@ -605,15 +647,64 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                     horizontal: 8,
                     vertical: 6,
                   ),
-                  child: Text(
-                    panelState.currentPath.isEmpty
-                        ? '...'
-                        : panelState.currentPath,
-                    style: textStyle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: Text('...', style: textStyle, maxLines: 1),
                 ),
+              ),
+            )
+          : SizedBox(
+              width: double.infinity,
+              height: fontSize + 16,
+              child: Stack(
+                alignment: Alignment.centerLeft,
+                children: [
+                  Positioned.fill(
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.text,
+                      child: GestureDetector(
+                        key: Key('path_bar_edit_area_${widget.panelId}'),
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          _activateThisPanel();
+                          controller.startEditingPath();
+                        },
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 24),
+                    child: SingleChildScrollView(
+                      controller: _breadcrumbScrollController,
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (int i = 0; i < breadcrumbs.length; i++) ...[
+                            if (i > 0)
+                              Icon(
+                                Icons.chevron_right,
+                                size: fontSize + 1,
+                                color: fimaTheme.secondaryTextColor,
+                              ),
+                            _BreadcrumbChip(
+                              label: breadcrumbs[i].label,
+                              isCurrent: i == breadcrumbs.length - 1,
+                              fontSize: fontSize,
+                              fimaTheme: fimaTheme,
+                              onTap: () {
+                                _activateThisPanel();
+                                controller.loadPath(breadcrumbs[i].targetPath);
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
     );
@@ -764,6 +855,15 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       }
       if (previous?.isEditingPath != true && next.isEditingPath) {
         _activatePathEditor(next.currentPath);
+      }
+      if (previous?.currentPath != next.currentPath ||
+          (previous?.isEditingPath == true && !next.isEditingPath)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_breadcrumbScrollController.hasClients) return;
+          _breadcrumbScrollController.jumpTo(
+            _breadcrumbScrollController.position.maxScrollExtent,
+          );
+        });
       }
     });
 
@@ -1080,11 +1180,23 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                                       SizedBox(
                                         width: sizeWidth,
                                         child: Text(
-                                          item.isDirectory &&
-                                                  !item.isParentDetails
-                                              ? '<DIR>'
-                                              : item.isParentDetails
+                                          item.isParentDetails
                                               ? ''
+                                              : item.isDirectory
+                                              ? panelState
+                                                        .calculatingDirectories
+                                                        .contains(item.path)
+                                                    ? '...'
+                                                    : panelState.directorySizes
+                                                          .containsKey(
+                                                            item.path,
+                                                          )
+                                                    ? _formatSize(
+                                                        panelState
+                                                            .directorySizes[item
+                                                            .path]!,
+                                                      )
+                                                    : '<DIR>'
                                               : _formatSize(item.size),
                                           style: theme.textTheme.bodySmall
                                               ?.copyWith(
@@ -1212,6 +1324,72 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                     ),
                   ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PathBreadcrumb {
+  final String label;
+  final String targetPath;
+
+  const _PathBreadcrumb({required this.label, required this.targetPath});
+}
+
+class _BreadcrumbChip extends StatefulWidget {
+  final String label;
+  final bool isCurrent;
+  final double fontSize;
+  final FimaTheme fimaTheme;
+  final VoidCallback onTap;
+
+  const _BreadcrumbChip({
+    required this.label,
+    required this.isCurrent,
+    required this.fontSize,
+    required this.fimaTheme,
+    required this.onTap,
+  });
+
+  @override
+  State<_BreadcrumbChip> createState() => _BreadcrumbChipState();
+}
+
+class _BreadcrumbChipState extends State<_BreadcrumbChip> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          decoration: BoxDecoration(
+            color: _hovered
+                ? widget.fimaTheme.accentColor.withValues(alpha: 0.14)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            widget.label,
+            style: TextStyle(
+              fontSize: widget.fontSize,
+              fontWeight: widget.isCurrent
+                  ? FontWeight.w600
+                  : FontWeight.normal,
+              color: _hovered
+                  ? widget.fimaTheme.accentColor
+                  : widget.isCurrent
+                  ? widget.fimaTheme.textColor
+                  : widget.fimaTheme.secondaryTextColor,
             ),
           ),
         ),

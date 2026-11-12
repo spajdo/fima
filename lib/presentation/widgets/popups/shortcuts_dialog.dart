@@ -78,7 +78,13 @@ class _ShortcutsDialogState extends ConsumerState<ShortcutsDialog> {
         _ShortcutEntry('Move to Trash', s('deleteToTrash')),
         _ShortcutEntry('Permanent Delete', s('permanentDelete')),
         _ShortcutEntry('File Preview', s('filePreview')),
+        _ShortcutEntry('Compare Files', s('compareFiles')),
         _ShortcutEntry('Info', s('showInfo')),
+        _ShortcutEntry('Edit Permissions', s('editPermissions')),
+        _ShortcutEntry(
+          'Calculate Directory Sizes',
+          s('calculateDirectorySizes'),
+        ),
         _ShortcutEntry('Open With...', s('openWith')),
         _ShortcutEntry('Open Default File Manager', s('openDefaultManager')),
         _ShortcutEntry('Toggle Hidden Files', s('toggleHiddenFiles')),
@@ -107,6 +113,8 @@ class _ShortcutsDialogState extends ConsumerState<ShortcutsDialog> {
       _ShortcutCategory('WORKSPACES & REMOTE', [
         _ShortcutEntry('Workspaces', s('workspaceDialog')),
         _ShortcutEntry('Save as Workspace', s('saveWorkspace')),
+        _ShortcutEntry('Bookmarks', s('bookmarkDialog')),
+        _ShortcutEntry('Save Bookmark', s('saveBookmark')),
         _ShortcutEntry('Connect to Server', s('connectToServer')),
         _ShortcutEntry('Remote Connections', s('remoteDialog')),
       ]),

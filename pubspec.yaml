@@ -57,6 +57,7 @@ dependencies:
   flutter_svg: ^2.3.4
   super_drag_and_drop: ^0.9.1
   image: ^4.12.0
+  crypto: ^3.0.8
 
 dependency_overrides:
   # flutter_html 3.0.0 imports internal html/src/query_selector.dart (matches),

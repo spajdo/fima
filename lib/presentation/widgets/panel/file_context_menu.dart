@@ -11,6 +11,7 @@ import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/internal_clipboard_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
+import 'package:fima/presentation/providers/panel_feature_actions.dart';
 import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
@@ -49,6 +50,11 @@ enum ContextMenuAction {
   refresh,
   openTerminalHere,
   openDefaultManager,
+  calculateDirectorySize,
+  calculateAllDirectorySizes,
+  bookmarkFolder,
+  compareFiles,
+  editPermissions,
   moveToTrash,
   permanentDelete,
   info,
@@ -91,6 +97,7 @@ class FileContextMenu {
     required bool hasSelection,
     required bool showHiddenFiles,
     required bool canPaste,
+    bool canCompareWithOpposite = false,
   }) {
     final isRemote = currentPath.startsWith('ssh://');
     final isInsideZip = !isRemote && ItemMetadataService.isZipPath(currentPath);
@@ -148,7 +155,13 @@ class FileContextMenu {
     }
 
     if (isMulti) {
-      return _buildLocalMultiEntries(count: count);
+      final canCompareSelected =
+          targetItems.length == 2 &&
+          targetItems.every((e) => !e.isDirectory && !e.isParentDetails);
+      return _buildLocalMultiEntries(
+        count: count,
+        canCompareSelected: canCompareSelected,
+      );
     }
 
     if (clickedItem.isDirectory) {
@@ -159,7 +172,9 @@ class FileContextMenu {
       return _buildLocalZipEntries(clickedItem);
     }
 
-    return _buildLocalFileEntries();
+    return _buildLocalFileEntries(
+      canCompareWithOpposite: canCompareWithOpposite,
+    );
   }
 
   static List<ContextMenuEntrySpec> _buildBackgroundEntries({
@@ -242,6 +257,19 @@ class FileContextMenu {
       entries.addAll([
         const ContextMenuEntrySpec.divider(),
         const ContextMenuEntrySpec.item(
+          action: ContextMenuAction.calculateAllDirectorySizes,
+          label: 'Calculate All Folder Sizes',
+          icon: Icons.calculate_outlined,
+          shortcutActionId: 'calculateDirectorySizes',
+        ),
+        const ContextMenuEntrySpec.item(
+          action: ContextMenuAction.bookmarkFolder,
+          label: 'Bookmark Current Folder...',
+          icon: Icons.bookmark_add_outlined,
+          shortcutActionId: 'saveBookmark',
+        ),
+        const ContextMenuEntrySpec.divider(),
+        const ContextMenuEntrySpec.item(
           action: ContextMenuAction.openTerminalHere,
           label: 'Open Terminal Here',
           icon: Icons.terminal_outlined,
@@ -277,14 +305,19 @@ class FileContextMenu {
     final entries = <ContextMenuEntrySpec>[];
 
     if (!isMulti && item.isDirectory) {
-      entries.add(
-        const ContextMenuEntrySpec.item(
+      entries.addAll(const [
+        ContextMenuEntrySpec.item(
           action: ContextMenuAction.open,
           label: 'Open',
           icon: Icons.folder_open_outlined,
           shortcutActionId: 'enterDirectory',
         ),
-      );
+        ContextMenuEntrySpec.item(
+          action: ContextMenuAction.calculateDirectorySize,
+          label: 'Calculate Size',
+          icon: Icons.calculate_outlined,
+        ),
+      ]);
     }
 
     entries.addAll([
@@ -381,6 +414,12 @@ class FileContextMenu {
           icon: Icons.drive_file_rename_outline,
           shortcutActionId: 'rename',
         ),
+        ContextMenuEntrySpec.item(
+          action: ContextMenuAction.editPermissions,
+          label: 'Permissions...',
+          icon: Icons.lock_outline,
+          shortcutActionId: 'editPermissions',
+        ),
       ]);
     }
 
@@ -409,8 +448,18 @@ class FileContextMenu {
 
   static List<ContextMenuEntrySpec> _buildLocalMultiEntries({
     required int count,
+    bool canCompareSelected = false,
   }) {
     return [
+      if (canCompareSelected) ...[
+        const ContextMenuEntrySpec.item(
+          action: ContextMenuAction.compareFiles,
+          label: 'Compare Selected Files',
+          icon: Icons.compare_outlined,
+          shortcutActionId: 'compareFiles',
+        ),
+        const ContextMenuEntrySpec.divider(),
+      ],
       ContextMenuEntrySpec.item(
         action: ContextMenuAction.copyToOpposite,
         label: 'Copy $count Items to Opposite Panel',
@@ -536,6 +585,23 @@ class FileContextMenu {
         icon: Icons.folder_zip_outlined,
         shortcutActionId: 'compress',
       ),
+      const ContextMenuEntrySpec.item(
+        action: ContextMenuAction.calculateDirectorySize,
+        label: 'Calculate Size',
+        icon: Icons.calculate_outlined,
+      ),
+      const ContextMenuEntrySpec.item(
+        action: ContextMenuAction.bookmarkFolder,
+        label: 'Bookmark Folder...',
+        icon: Icons.bookmark_add_outlined,
+      ),
+      if (!Platform.isWindows)
+        const ContextMenuEntrySpec.item(
+          action: ContextMenuAction.editPermissions,
+          label: 'Permissions...',
+          icon: Icons.lock_outline,
+          shortcutActionId: 'editPermissions',
+        ),
       const ContextMenuEntrySpec.divider(),
       const ContextMenuEntrySpec.item(
         action: ContextMenuAction.openTerminalHere,
@@ -650,6 +716,13 @@ class FileContextMenu {
         icon: Icons.drive_file_rename_outline,
         shortcutActionId: 'rename',
       ),
+      if (!Platform.isWindows)
+        const ContextMenuEntrySpec.item(
+          action: ContextMenuAction.editPermissions,
+          label: 'Permissions...',
+          icon: Icons.lock_outline,
+          shortcutActionId: 'editPermissions',
+        ),
       ContextMenuEntrySpec.item(
         action: ContextMenuAction.openDefaultManager,
         label: _defaultFileManagerLabel(forFile: true),
@@ -680,7 +753,9 @@ class FileContextMenu {
     ];
   }
 
-  static List<ContextMenuEntrySpec> _buildLocalFileEntries() {
+  static List<ContextMenuEntrySpec> _buildLocalFileEntries({
+    bool canCompareWithOpposite = false,
+  }) {
     return [
       const ContextMenuEntrySpec.item(
         action: ContextMenuAction.open,
@@ -700,6 +775,13 @@ class FileContextMenu {
         icon: Icons.preview_outlined,
         shortcutActionId: 'filePreview',
       ),
+      if (canCompareWithOpposite)
+        const ContextMenuEntrySpec.item(
+          action: ContextMenuAction.compareFiles,
+          label: 'Compare with Opposite',
+          icon: Icons.compare_outlined,
+          shortcutActionId: 'compareFiles',
+        ),
       const ContextMenuEntrySpec.divider(),
       const ContextMenuEntrySpec.item(
         action: ContextMenuAction.copyToOpposite,
@@ -745,6 +827,13 @@ class FileContextMenu {
         icon: Icons.folder_zip_outlined,
         shortcutActionId: 'compress',
       ),
+      if (!Platform.isWindows)
+        const ContextMenuEntrySpec.item(
+          action: ContextMenuAction.editPermissions,
+          label: 'Permissions...',
+          icon: Icons.lock_outline,
+          shortcutActionId: 'editPermissions',
+        ),
       ContextMenuEntrySpec.item(
         action: ContextMenuAction.openDefaultManager,
         label: _defaultFileManagerLabel(forFile: true),
@@ -832,6 +921,15 @@ class FileContextMenu {
 
     if (!context.mounted) return;
 
+    final canCompareWithOpposite =
+        clickedItem != null &&
+        !clickedItem.isDirectory &&
+        !clickedItem.isParentDetails &&
+        targetItems.length == 1 &&
+        !panelState.currentPath.startsWith('ssh://') &&
+        !ItemMetadataService.isZipPath(panelState.currentPath) &&
+        PanelFeatureActions.resolveCompareFilePaths(ref) != null;
+
     final entries = buildEntries(
       currentPath: panelState.currentPath,
       clickedItem: clickedItem,
@@ -839,6 +937,7 @@ class FileContextMenu {
       hasSelection: panelState.selectedItems.isNotEmpty,
       showHiddenFiles: showHiddenFiles,
       canPaste: canPaste,
+      canCompareWithOpposite: canCompareWithOpposite,
     );
 
     final fimaTheme = ref.read(themeProvider);
@@ -1147,6 +1246,41 @@ class FileContextMenu {
           );
         } else if (panelState.currentPath.isNotEmpty) {
           await controller.openFileManager(panelState.currentPath);
+        }
+        break;
+      case ContextMenuAction.calculateDirectorySize:
+        if (clickedItem != null && clickedItem.isDirectory) {
+          await controller.calculateDirectorySize(clickedItem.path);
+        }
+        break;
+      case ContextMenuAction.calculateAllDirectorySizes:
+        await controller.calculateAllDirectorySizes();
+        break;
+      case ContextMenuAction.bookmarkFolder:
+        final folderPath = (clickedItem != null && clickedItem.isDirectory)
+            ? clickedItem.path
+            : panelState.currentPath;
+        await PanelFeatureActions.promptSaveBookmark(
+          context,
+          ref,
+          folderPath: folderPath,
+        );
+        break;
+      case ContextMenuAction.compareFiles:
+        await PanelFeatureActions.openCompareFiles(
+          context,
+          ref,
+          explicitItems: targetItems.length == 2 ? targetItems : null,
+        );
+        break;
+      case ContextMenuAction.editPermissions:
+        if (clickedItem != null) {
+          await PanelFeatureActions.openEditPermissions(
+            context,
+            ref,
+            item: clickedItem,
+            currentPath: panelState.currentPath,
+          );
         }
         break;
       case ContextMenuAction.moveToTrash:
