@@ -3,6 +3,7 @@ import 'package:fima/infrastructure/repository/compound_file_system_repository.d
 import 'package:fima/infrastructure/service/secure_password_service.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
+import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
 import 'package:flutter/material.dart';
@@ -12,7 +13,16 @@ class ConnectServerDialog extends ConsumerStatefulWidget {
   /// If provided, pre-fills the dialog for editing an existing connection.
   final RemoteConnection? existingConnection;
 
-  const ConnectServerDialog({super.key, this.existingConnection});
+  /// Optional tab ID and SSH path to navigate to after reconnecting.
+  final String? targetTabId;
+  final String? targetSshPath;
+
+  const ConnectServerDialog({
+    super.key,
+    this.existingConnection,
+    this.targetTabId,
+    this.targetSshPath,
+  });
 
   @override
   ConsumerState<ConnectServerDialog> createState() =>
@@ -127,12 +137,21 @@ class _ConnectServerDialogState extends ConsumerState<ConnectServerDialog> {
       if (!mounted) return;
       Navigator.of(context).pop();
 
-      // Navigate the active panel to the SSH path.
-      final focusController = ref.read(focusProvider.notifier);
-      final activePanelId = focusController.getActivePanelId();
-      ref
-          .read(panelStateProvider(activePanelId).notifier)
-          .loadSshPath(connection);
+      // Navigate the target tab (or active panel's active tab) to the SSH path.
+      if (widget.targetTabId != null && widget.targetSshPath != null) {
+        ref
+            .read(panelStateProvider(widget.targetTabId!).notifier)
+            .loadPath(widget.targetSshPath!, addToVisited: false);
+      } else {
+        final focusController = ref.read(focusProvider.notifier);
+        final activePanelId = focusController.getActivePanelId();
+        final activeTabId = ref
+            .read(panelTabsProvider(activePanelId))
+            .activeTabId;
+        ref
+            .read(panelStateProvider(activeTabId).notifier)
+            .loadSshPath(connection);
+      }
     } catch (e) {
       setState(() {
         _connecting = false;

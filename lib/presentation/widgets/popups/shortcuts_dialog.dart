@@ -97,6 +97,12 @@ class _ShortcutsDialogState extends ConsumerState<ShortcutsDialog> {
         _ShortcutEntry('Extract Here', s('extractHere')),
         _ShortcutEntry('Extract to Opposite Panel', s('extractToOpposite')),
       ]),
+      _ShortcutCategory('TABS', [
+        _ShortcutEntry('New Tab', s('newTab')),
+        _ShortcutEntry('Close Tab', s('closeTab')),
+        _ShortcutEntry('Next Tab', s('nextTab')),
+        _ShortcutEntry('Previous Tab', s('previousTab')),
+      ]),
       _ShortcutCategory('WORKSPACES & REMOTE', [
         _ShortcutEntry('Workspaces', s('workspaceDialog')),
         _ShortcutEntry('Save as Workspace', s('saveWorkspace')),

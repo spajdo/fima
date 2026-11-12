@@ -38,8 +38,16 @@ class SettingsService {
 
       final contents = await file.readAsString();
       final json = jsonDecode(contents) as Map<String, dynamic>;
+      final needsMigration = UserSettings.needsMigration(json);
+      final settings = UserSettings.fromJson(json);
       debugPrint('Settings loaded from $path');
-      return UserSettings.fromJson(json);
+
+      if (needsMigration) {
+        debugPrint('Migrating settings to tab format and saving');
+        await save(settings);
+      }
+
+      return settings;
     } catch (e) {
       debugPrint('Error loading settings: $e, using defaults');
       return UserSettings.defaultSettings();

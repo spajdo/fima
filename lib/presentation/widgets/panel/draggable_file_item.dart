@@ -12,6 +12,7 @@ class DraggableFileItem extends ConsumerWidget {
   final FileSystemItem item;
   final PanelState panelState;
   final String panelId;
+  final String? tabId;
   final Widget child;
 
   const DraggableFileItem({
@@ -19,6 +20,7 @@ class DraggableFileItem extends ConsumerWidget {
     required this.item,
     required this.panelState,
     required this.panelId,
+    this.tabId,
     required this.child,
   });
 
@@ -58,8 +60,10 @@ class DraggableFileItem extends ConsumerWidget {
         child: DragPreviewCard(items: dragItems),
       ),
       dragItemProvider: (request) async {
-        ref.read(dragStateProvider.notifier).startInternalDrag(panelId, paths);
-        // Provide a base drag item. The actual multi-item configuration 
+        ref
+            .read(dragStateProvider.notifier)
+            .startInternalDrag(panelId, paths, sourceTabId: tabId);
+        // Provide a base drag item. The actual multi-item configuration
         // is built inside DraggableWidget's onDragConfiguration.
         return DragItem(localData: paths);
       },
@@ -74,20 +78,20 @@ class DraggableFileItem extends ConsumerWidget {
 
           // Helper to clone snapshot so we don't dispose the same ui.Image twice
           TargetedWidgetSnapshot cloneSnapshot(TargetedWidgetSnapshot orig) {
-             if (orig.snapshot.isImage) {
-               final clonedImage = orig.snapshot.image.clone();
-               return TargetedWidgetSnapshot(
-                 WidgetSnapshot.image(clonedImage),
-                 orig.rect,
-               );
-             }
-             return orig; // Fallback for render object snapshot (web), which doesn't dispose an image
+            if (orig.snapshot.isImage) {
+              final clonedImage = orig.snapshot.image.clone();
+              return TargetedWidgetSnapshot(
+                WidgetSnapshot.image(clonedImage),
+                orig.rect,
+              );
+            }
+            return orig; // Fallback for render object snapshot (web), which doesn't dispose an image
           }
 
           for (int i = 0; i < paths.length; i++) {
             final path = paths[i];
             final dragItem = DragItem(localData: paths);
-            
+
             if (!path.startsWith('ssh://')) {
               dragItem.add(Formats.fileUri(Uri.file(path)));
             }
@@ -95,10 +99,14 @@ class DraggableFileItem extends ConsumerWidget {
 
             // First item gets the original snapshot, others get clones
             final isFirst = i == 0;
-            final image = isFirst ? originalItem.image : cloneSnapshot(originalItem.image);
-            final liftImage = originalItem.liftImage == null 
-                ? null 
-                : (isFirst ? originalItem.liftImage! : cloneSnapshot(originalItem.liftImage!));
+            final image = isFirst
+                ? originalItem.image
+                : cloneSnapshot(originalItem.image);
+            final liftImage = originalItem.liftImage == null
+                ? null
+                : (isFirst
+                      ? originalItem.liftImage!
+                      : cloneSnapshot(originalItem.liftImage!));
 
             newItems.add(
               DragConfigurationItem(

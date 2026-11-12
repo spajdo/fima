@@ -12,6 +12,7 @@ import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/internal_clipboard_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
+import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart';
 import 'package:fima/presentation/widgets/popups/connect_server_dialog.dart';
@@ -51,8 +52,11 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
     void moveAction() {
       final focusController = ref.read(focusProvider.notifier);
       final activePanelId = focusController.getActivePanelId();
+      final activeTabId = ref
+          .read(panelTabsProvider(activePanelId))
+          .activeTabId;
       final panelController = ref.read(
-        panelStateProvider(activePanelId).notifier,
+        panelStateProvider(activeTabId).notifier,
       );
 
       if (key == LogicalKeyboardKey.arrowUp) {
@@ -118,8 +122,11 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
             final activePanelIdForNav = ref
                 .read(focusProvider.notifier)
                 .getActivePanelId();
+            final activeTabIdForNav = ref
+                .read(panelTabsProvider(activePanelIdForNav))
+                .activeTabId;
             final navPanelState = ref.read(
-              panelStateProvider(activePanelIdForNav),
+              panelStateProvider(activeTabIdForNav),
             );
             final isEditing =
                 navPanelState.editingPath != null ||
@@ -141,10 +148,13 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
 
         final focusController = ref.read(focusProvider.notifier);
         final activePanelId = focusController.getActivePanelId();
+        final activeTabId = ref
+            .read(panelTabsProvider(activePanelId))
+            .activeTabId;
         final panelController = ref.read(
-          panelStateProvider(activePanelId).notifier,
+          panelStateProvider(activeTabId).notifier,
         );
-        final currentPanelState = ref.read(panelStateProvider(activePanelId));
+        final currentPanelState = ref.read(panelStateProvider(activeTabId));
 
         // If renaming or editing the path bar is in progress, disable all
         // panel shortcuts; the active field handles Escape, Enter, and input.
@@ -224,6 +234,7 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
               context,
               actionId,
               activePanelId,
+              activeTabId,
               panelController,
               currentPanelState,
               currentShortcut,
@@ -333,7 +344,8 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
 
   void _openWithApplication(BuildContext context, WidgetRef ref) {
     final activePanelId = ref.read(focusProvider.notifier).getActivePanelId();
-    final panelState = ref.read(panelStateProvider(activePanelId));
+    final activeTabId = ref.read(panelTabsProvider(activePanelId)).activeTabId;
+    final panelState = ref.read(panelStateProvider(activeTabId));
     String? targetPath;
 
     if (panelState.selectedItems.isNotEmpty) {
@@ -352,7 +364,7 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
     ApplicationPickerDialog.show(context, applications).then((selectedApp) {
       if (selectedApp != null) {
         ref
-            .read(panelStateProvider(activePanelId).notifier)
+            .read(panelStateProvider(activeTabId).notifier)
             .openWithApplication(selectedApp, targetPath!);
       }
     });
@@ -360,10 +372,10 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
 
   Future<void> _copyToClipboard(
     WidgetRef ref,
-    String activePanelId,
+    String activeTabId,
     ClipboardOperation operation,
   ) async {
-    final panelState = ref.read(panelStateProvider(activePanelId));
+    final panelState = ref.read(panelStateProvider(activeTabId));
     List<String> paths = panelState.selectedItems.toList();
 
     if (paths.isEmpty) {
@@ -389,8 +401,8 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
     }
   }
 
-  void _copyPathToClipboard(WidgetRef ref, String activePanelId) {
-    final panelState = ref.read(panelStateProvider(activePanelId));
+  void _copyPathToClipboard(WidgetRef ref, String activeTabId) {
+    final panelState = ref.read(panelStateProvider(activeTabId));
     String? targetPath;
 
     if (panelState.focusedIndex >= 0 &&
@@ -407,9 +419,9 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
     }
   }
 
-  Future<void> _pasteFromClipboard(WidgetRef ref, String activePanelId) async {
+  Future<void> _pasteFromClipboard(WidgetRef ref, String activeTabId) async {
     final clipboardData = await SystemClipboard.getFilePaths();
-    final destPath = ref.read(panelStateProvider(activePanelId)).currentPath;
+    final destPath = ref.read(panelStateProvider(activeTabId)).currentPath;
 
     if (destPath.isEmpty) return;
 
@@ -475,14 +487,17 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
       // Clear clipboard and internal state
       ref.read(internalClipboardProvider.notifier).clearCutPaths();
 
-      // Refresh both panels
+      // Refresh both tabs
       final sourcePanelId = ref
           .read(focusProvider.notifier)
           .getInactivePanelId();
+      final sourceTabId = ref
+          .read(panelTabsProvider(sourcePanelId))
+          .activeTabId;
 
-      // Compute which item to focus in the source panel after the move.
+      // Compute which item to focus in the source tab after the move.
       // The panel state is still unmodified in Riverpod at this point.
-      final sourcePanelState = ref.read(panelStateProvider(sourcePanelId));
+      final sourcePanelState = ref.read(panelStateProvider(sourceTabId));
       String? sourceSelectPath;
       final remaining = sourcePanelState.items
           .where((item) => !finalPaths.contains(item.path))
@@ -502,10 +517,10 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
       }
 
       ref
-          .read(panelStateProvider(sourcePanelId).notifier)
+          .read(panelStateProvider(sourceTabId).notifier)
           .loadPath(sourcePath!, selectItemPath: sourceSelectPath);
       ref
-          .read(panelStateProvider(activePanelId).notifier)
+          .read(panelStateProvider(activeTabId).notifier)
           .loadPath(destPath, preserveFocusedIndex: true);
       return;
     } else {
@@ -528,7 +543,7 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
             ? '$destPath/$copiedFileName'
             : null;
         ref
-            .read(panelStateProvider(activePanelId).notifier)
+            .read(panelStateProvider(activeTabId).notifier)
             .loadPath(destPath, selectItemPath: destSelectPath);
       } else {
         final stream = repository.copyItems(
@@ -548,7 +563,7 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
             ? '$destPath/$copiedFileName'
             : null;
         ref
-            .read(panelStateProvider(activePanelId).notifier)
+            .read(panelStateProvider(activeTabId).notifier)
             .loadPath(destPath, selectItemPath: destSelectPath);
       }
       return;
@@ -601,6 +616,7 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
     BuildContext context,
     String actionId,
     String activePanelId,
+    String activeTabId,
     dynamic panelController,
     dynamic currentPanelState,
     String currentShortcut,
@@ -640,16 +656,28 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         panelController.deselectAll();
         return KeyEventResult.handled;
       case 'copyToClipboard':
-        _copyToClipboard(ref, activePanelId, ClipboardOperation.copy);
+        _copyToClipboard(ref, activeTabId, ClipboardOperation.copy);
         return KeyEventResult.handled;
       case 'cutToClipboard':
-        _copyToClipboard(ref, activePanelId, ClipboardOperation.cut);
+        _copyToClipboard(ref, activeTabId, ClipboardOperation.cut);
         return KeyEventResult.handled;
       case 'pasteFromClipboard':
-        _pasteFromClipboard(ref, activePanelId);
+        _pasteFromClipboard(ref, activeTabId);
         return KeyEventResult.handled;
       case 'switchPanel':
         ref.read(focusProvider.notifier).switchPanel();
+        return KeyEventResult.handled;
+      case 'newTab':
+        ref.read(panelTabsProvider(activePanelId).notifier).createTab();
+        return KeyEventResult.handled;
+      case 'closeTab':
+        ref.read(panelTabsProvider(activePanelId).notifier).closeActiveTab();
+        return KeyEventResult.handled;
+      case 'nextTab':
+        ref.read(panelTabsProvider(activePanelId).notifier).nextTab();
+        return KeyEventResult.handled;
+      case 'previousTab':
+        ref.read(panelTabsProvider(activePanelId).notifier).previousTab();
         return KeyEventResult.handled;
       case 'toggleHiddenFiles':
         ref.read(userSettingsProvider.notifier).toggleShowHiddenFiles();
@@ -658,7 +686,7 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         panelController.deleteSelectedItems(permanent: false);
         return KeyEventResult.handled;
       case 'permanentDelete':
-        _showDeleteConfirmation(context, ref, activePanelId, permanent: true);
+        _showDeleteConfirmation(context, ref, activeTabId, permanent: true);
         return KeyEventResult.handled;
       case 'copyOperation':
         ref.read(operationStatusProvider.notifier).startCopy();
@@ -670,7 +698,7 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         _showCompressDialog(
           context,
           ref,
-          activePanelId,
+          activeTabId,
           panelController,
           currentPanelState,
         );
@@ -679,13 +707,13 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         panelController.startRenaming();
         return KeyEventResult.handled;
       case 'createDirectory':
-        _showCreateDialog(context, ref, activePanelId, isDirectory: true);
+        _showCreateDialog(context, ref, activeTabId, isDirectory: true);
         return KeyEventResult.handled;
       case 'createFile':
-        _showCreateDialog(context, ref, activePanelId, isDirectory: false);
+        _showCreateDialog(context, ref, activeTabId, isDirectory: false);
         return KeyEventResult.handled;
       case 'openTerminal':
-        final path = ref.read(panelStateProvider(activePanelId)).currentPath;
+        final path = ref.read(panelStateProvider(activeTabId)).currentPath;
         if (path.isNotEmpty) {
           final useBuiltIn = ref.read(userSettingsProvider).useBuiltInTerminal;
           if (useBuiltIn) {
@@ -701,7 +729,7 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         _openWithApplication(context, ref);
         return KeyEventResult.handled;
       case 'openDefaultManager':
-        final path = ref.read(panelStateProvider(activePanelId)).currentPath;
+        final path = ref.read(panelStateProvider(activeTabId)).currentPath;
         if (path.isNotEmpty) {
           _openFileManager(path);
         }
@@ -768,7 +796,7 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         );
         return KeyEventResult.handled;
       case 'copyPath':
-        _copyPathToClipboard(ref, activePanelId);
+        _copyPathToClipboard(ref, activeTabId);
         return KeyEventResult.handled;
       case 'extractHere':
         final item = currentPanelState.items[currentPanelState.focusedIndex];
@@ -784,16 +812,19 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         final item = currentPanelState.items[currentPanelState.focusedIndex];
         if (item.path.toLowerCase().endsWith('.zip')) {
           final oppositePanelId = activePanelId == 'left' ? 'right' : 'left';
+          final oppositeTabId = ref
+              .read(panelTabsProvider(oppositePanelId))
+              .activeTabId;
           final destPath = ref
-              .read(panelStateProvider(oppositePanelId))
+              .read(panelStateProvider(oppositeTabId))
               .currentPath;
           panelController.extractArchive(item.path, destPath).then((_) {
-            ref.read(panelStateProvider(oppositePanelId).notifier).refresh();
+            ref.read(panelStateProvider(oppositeTabId).notifier).refresh();
           });
         }
         return KeyEventResult.handled;
       case 'filePreview':
-        _showFilePreviewDialog(context, ref, activePanelId);
+        _showFilePreviewDialog(context, ref, activeTabId);
         return KeyEventResult.handled;
       default:
         return null;
@@ -803,10 +834,10 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
   void _showDeleteConfirmation(
     BuildContext context,
     WidgetRef ref,
-    String activePanelId, {
+    String activeTabId, {
     required bool permanent,
   }) {
-    final panelState = ref.read(panelStateProvider(activePanelId));
+    final panelState = ref.read(panelStateProvider(activeTabId));
     int count = panelState.selectedItems.length;
     if (count == 0 &&
         panelState.focusedIndex >= 0 &&
@@ -823,7 +854,7 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
       ).then((confirmed) {
         if (confirmed == true) {
           ref
-              .read(panelStateProvider(activePanelId).notifier)
+              .read(panelStateProvider(activeTabId).notifier)
               .deleteSelectedItems(permanent: permanent);
         }
       });
@@ -833,9 +864,9 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
   void _showFilePreviewDialog(
     BuildContext context,
     WidgetRef ref,
-    String activePanelId,
+    String activeTabId,
   ) {
-    final panelState = ref.read(panelStateProvider(activePanelId));
+    final panelState = ref.read(panelStateProvider(activeTabId));
     if (panelState.focusedIndex >= 0 &&
         panelState.focusedIndex < panelState.items.length) {
       final item = panelState.items[panelState.focusedIndex];
@@ -848,10 +879,10 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
   void _showCreateDialog(
     BuildContext context,
     WidgetRef ref,
-    String activePanelId, {
+    String activeTabId, {
     required bool isDirectory,
   }) {
-    final panelState = ref.read(panelStateProvider(activePanelId));
+    final panelState = ref.read(panelStateProvider(activeTabId));
     if (panelState.currentPath.isEmpty) return;
 
     showDialog(
@@ -864,7 +895,7 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
       ),
     ).then((name) {
       if (name != null && name.toString().isNotEmpty) {
-        final controller = ref.read(panelStateProvider(activePanelId).notifier);
+        final controller = ref.read(panelStateProvider(activeTabId).notifier);
         if (isDirectory) {
           controller.createDirectory(name.toString());
         } else {
@@ -875,8 +906,8 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
   }
 
   void _showSaveWorkspaceDialog(BuildContext context, WidgetRef ref) {
-    final leftState = ref.read(panelStateProvider('left'));
-    final rightState = ref.read(panelStateProvider('right'));
+    final leftTabsState = ref.read(panelTabsProvider('left'));
+    final rightTabsState = ref.read(panelTabsProvider('right'));
 
     showDialog(
       context: context,
@@ -890,8 +921,10 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
       if (name != null && name.toString().isNotEmpty) {
         final workspace = Workspace(
           name: name.toString(),
-          leftPanelPath: leftState.currentPath,
-          rightPanelPath: rightState.currentPath,
+          leftTabs: leftTabsState.tabs,
+          leftActiveTabIndex: leftTabsState.activeTabIndex,
+          rightTabs: rightTabsState.tabs,
+          rightActiveTabIndex: rightTabsState.activeTabIndex,
         );
         ref.read(userSettingsProvider.notifier).addWorkspace(workspace);
       }

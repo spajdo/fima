@@ -4,6 +4,7 @@ import 'package:fima/domain/entity/user_settings.dart';
 import 'package:fima/domain/repository/file_system_repository.dart';
 import 'package:fima/infrastructure/service/settings_service.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
+import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/omni_dialog.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
@@ -110,12 +111,17 @@ void main() {
         ),
       );
 
+      final leftTabId = capturedRef.read(panelTabsProvider('left')).activeTabId;
+      final rightTabId = capturedRef
+          .read(panelTabsProvider('right'))
+          .activeTabId;
+
       await capturedRef
-          .read(panelStateProvider('left').notifier)
-          .loadPath('/tmp/left', addToVisited: false);
+          .read(panelStateProvider(leftTabId).notifier)
+          .initTab(panelId: 'left', initialPath: '/tmp/left');
       await capturedRef
-          .read(panelStateProvider('right').notifier)
-          .loadPath('/tmp/right', addToVisited: false);
+          .read(panelStateProvider(rightTabId).notifier)
+          .initTab(panelId: 'right', initialPath: '/tmp/right');
       await tester.pumpAndSettle();
 
       // Open OmniDialog with ">Save as Workspace"

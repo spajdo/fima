@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fima/domain/entity/file_operation.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
+import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -64,12 +65,17 @@ class OperationController extends StateNotifier<OperationState> {
     final sourceId = activePanel == ActivePanel.left ? 'left' : 'right';
     final destId = activePanel == ActivePanel.left ? 'right' : 'left';
 
-    final sourceController = _ref.read(panelStateProvider(sourceId).notifier);
-    final destController = _ref.read(panelStateProvider(destId).notifier);
+    final sourceTabId = _ref.read(panelTabsProvider(sourceId)).activeTabId;
+    final destTabId = _ref.read(panelTabsProvider(destId)).activeTabId;
+
+    final sourceController = _ref.read(
+      panelStateProvider(sourceTabId).notifier,
+    );
+    final destController = _ref.read(panelStateProvider(destTabId).notifier);
 
     // Get selected items from source
     // If no selection, use focused item (if valid)
-    final sourceState = _ref.read(panelStateProvider(sourceId));
+    final sourceState = _ref.read(panelStateProvider(sourceTabId));
     List<String> sourcePaths = sourceState.selectedItems.toList();
 
     if (sourcePaths.isEmpty) {
@@ -84,7 +90,7 @@ class OperationController extends StateNotifier<OperationState> {
 
     if (sourcePaths.isEmpty) return; // Nothing to operate on
 
-    final destPath = _ref.read(panelStateProvider(destId)).currentPath;
+    final destPath = _ref.read(panelStateProvider(destTabId)).currentPath;
     if (destPath.isEmpty) return;
 
     // Start operation
@@ -110,64 +116,83 @@ class OperationController extends StateNotifier<OperationState> {
       onDone: () async {
         state = const OperationState(); // Reset on completion
 
-        if (isCopy) {
-          // Items still exist in source → preserve by path.
-          await sourceController.loadPath(
-            sourceState.currentPath,
-            preserveFocusedIndex: true,
-          );
-        } else {
-          // Move: items are gone from source. Select the next surviving item,
-          // falling back to the previous one if nothing is below.
-          final remaining = sourceState.items
-              .where((item) => !sourcePaths.contains(item.path))
-              .toList();
+        final sourceStillExists = _ref
+            .read(panelTabsProvider(sourceId).notifier)
+            .hasTab(sourceTabId);
+        final destStillExists = _ref
+            .read(panelTabsProvider(destId).notifier)
+            .hasTab(destTabId);
 
-          String? sourceSelectPath;
-          if (remaining.isNotEmpty) {
-            final focusedIdx = sourceState.focusedIndex;
-            // If the focused item wasn't moved, just keep it.
-            if (focusedIdx >= 0 &&
-                focusedIdx < sourceState.items.length &&
-                !sourcePaths.contains(sourceState.items[focusedIdx].path)) {
-              sourceSelectPath = sourceState.items[focusedIdx].path;
-            } else {
-              // Focus the item that "slides into" the old position (or last).
-              final targetIdx = focusedIdx.clamp(0, remaining.length - 1);
-              sourceSelectPath = remaining[targetIdx].path;
+        if (sourceStillExists) {
+          if (isCopy) {
+            // Items still exist in source → preserve by path.
+            await sourceController.loadPath(
+              sourceState.currentPath,
+              preserveFocusedIndex: true,
+            );
+          } else {
+            // Move: items are gone from source. Select the next surviving item,
+            // falling back to the previous one if nothing is below.
+            final remaining = sourceState.items
+                .where((item) => !sourcePaths.contains(item.path))
+                .toList();
+
+            String? sourceSelectPath;
+            if (remaining.isNotEmpty) {
+              final focusedIdx = sourceState.focusedIndex;
+              // If the focused item wasn't moved, just keep it.
+              if (focusedIdx >= 0 &&
+                  focusedIdx < sourceState.items.length &&
+                  !sourcePaths.contains(sourceState.items[focusedIdx].path)) {
+                sourceSelectPath = sourceState.items[focusedIdx].path;
+              } else {
+                // Focus the item that "slides into" the old position (or last).
+                final targetIdx = focusedIdx.clamp(0, remaining.length - 1);
+                sourceSelectPath = remaining[targetIdx].path;
+              }
             }
-          }
 
-          await sourceController.loadPath(
-            sourceState.currentPath,
-            selectItemPath: sourceSelectPath,
-          );
+            await sourceController.loadPath(
+              sourceState.currentPath,
+              selectItemPath: sourceSelectPath,
+            );
+          }
         }
 
-        // Destination panel: keep whatever was focused there.
-        await destController.loadPath(destPath, preserveFocusedIndex: true);
+        // Destination tab: keep whatever was focused there.
+        if (destStillExists) {
+          await destController.loadPath(destPath, preserveFocusedIndex: true);
+        }
       },
     );
   }
 
   /// Runs a move (or copy) from explicit [sourcePaths] into [destinationPath],
-  /// then refreshes both panels on completion.  Used by the DnD handler.
+  /// then refreshes both tabs on completion. Used by the DnD handler.
   Future<void> startDropOperation({
     required List<String> sourcePaths,
     required String sourcePanelId,
+    String? sourceTabId,
     required String destinationPanelId,
+    String? destinationTabId,
     required String destinationPath,
     required bool isCopy,
   }) async {
     if (state.isRunning) return;
     if (sourcePaths.isEmpty || destinationPath.isEmpty) return;
 
-    final sourceState = _ref.read(panelStateProvider(sourcePanelId));
+    final resolvedSourceTabId =
+        sourceTabId ?? _ref.read(panelTabsProvider(sourcePanelId)).activeTabId;
+    final resolvedDestTabId =
+        destinationTabId ??
+        _ref.read(panelTabsProvider(destinationPanelId)).activeTabId;
+
+    final sourceState = _ref.read(panelStateProvider(resolvedSourceTabId));
     final sourceController = _ref.read(
-      panelStateProvider(sourcePanelId).notifier,
+      panelStateProvider(resolvedSourceTabId).notifier,
     );
     final destController = _ref.read(
-      panelStateProvider(destinationPanelId).notifier,
+      panelStateProvider(resolvedDestTabId).notifier,
     );
 
     _cancellationToken = CancellationToken();
@@ -199,19 +224,30 @@ class OperationController extends StateNotifier<OperationState> {
       },
       onDone: () async {
         state = const OperationState();
-        if (!isCopy) {
-          sourceController.deselectAll();
+        final sourceExists = _ref
+            .read(panelTabsProvider(sourcePanelId).notifier)
+            .hasTab(resolvedSourceTabId);
+        final destExists = _ref
+            .read(panelTabsProvider(destinationPanelId).notifier)
+            .hasTab(resolvedDestTabId);
+
+        if (sourceExists) {
+          if (!isCopy) {
+            sourceController.deselectAll();
+          }
+          await sourceController.loadPath(
+            sourceState.currentPath,
+            addToVisited: false,
+            preserveFocusedIndex: true,
+          );
         }
-        await sourceController.loadPath(
-          sourceState.currentPath,
-          addToVisited: false,
-          preserveFocusedIndex: true,
-        );
-        await destController.loadPath(
-          destinationPath,
-          addToVisited: false,
-          preserveFocusedIndex: true,
-        );
+        if (destExists) {
+          await destController.loadPath(
+            destinationPath,
+            addToVisited: false,
+            preserveFocusedIndex: true,
+          );
+        }
       },
     );
   }

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:fima/domain/entity/file_operation.dart';
 import 'package:fima/domain/entity/file_system_item.dart';
+import 'package:fima/domain/entity/panel_tab.dart';
 import 'package:fima/domain/entity/user_settings.dart';
 import 'package:fima/domain/repository/file_system_repository.dart';
 import 'package:fima/infrastructure/service/settings_service.dart';
@@ -17,8 +18,8 @@ import 'package:flutter_test/flutter_test.dart';
 class _InMemorySettingsService extends SettingsService {
   UserSettings stored = UserSettings.defaultSettings().copyWith(
     showWalkthroughOnStartup: false,
-    leftPanelPath: '/home/user',
-    rightPanelPath: '/home/other',
+    leftTabs: [PanelTab.create(path: '/home/user')],
+    rightTabs: [PanelTab.create(path: '/home/other')],
   );
 
   @override

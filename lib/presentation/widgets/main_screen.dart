@@ -1,11 +1,13 @@
 import 'package:fima/domain/entity/user_settings.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
+import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
 import 'package:fima/presentation/widgets/bottom_status_bar.dart';
 import 'package:fima/presentation/widgets/panel/built_in_terminal.dart';
 import 'package:fima/presentation/widgets/panel/file_panel.dart';
+import 'package:fima/presentation/widgets/popups/connect_server_dialog.dart';
 import 'package:fima/presentation/widgets/popups/settings_dialog.dart';
 import 'package:fima/presentation/widgets/popups/walkthrough_dialog.dart';
 import 'package:flutter/material.dart';
@@ -65,6 +67,23 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     final settings = ref.watch(userSettingsProvider);
     final overlayState = ref.watch(overlayProvider);
     final fimaTheme = ref.watch(themeProvider);
+
+    ref.listen<SshAuthRequest?>(pendingSshAuthProvider, (previous, next) {
+      if (next == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(pendingSshAuthProvider.notifier).state = null;
+        showDialog(
+          context: context,
+          barrierColor: Colors.black54,
+          builder: (_) => ConnectServerDialog(
+            existingConnection: next.connection,
+            targetTabId: next.tabId,
+            targetSshPath: next.targetPath,
+          ),
+        );
+      });
+    });
 
     return Scaffold(
       backgroundColor: fimaTheme.backgroundColor,
@@ -187,11 +206,13 @@ class _MainScreenState extends ConsumerState<MainScreen> {
           isLeftPanel: overlayState.isLeftPanel,
           onClose: () {
             ref.read(overlayProvider.notifier).close();
-            ref.read(panelStateProvider(panelId).notifier).refresh();
+            final tabId = ref.read(panelTabsProvider(panelId)).activeTabId;
+            ref.read(panelStateProvider(tabId).notifier).refresh();
           },
           onDirectoryChanged: (newPath) {
+            final tabId = ref.read(panelTabsProvider(panelId)).activeTabId;
             ref
-                .read(panelStateProvider(panelId).notifier)
+                .read(panelStateProvider(tabId).notifier)
                 .loadPath(newPath, addToVisited: false);
           },
         );

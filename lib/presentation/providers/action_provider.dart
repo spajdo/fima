@@ -10,6 +10,7 @@ import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
+import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart';
 import 'package:fima/presentation/widgets/popups/connect_server_dialog.dart';
@@ -35,13 +36,12 @@ class ActionGenerator {
   List<AppAction> generate() {
     final focusController = ref.read(focusProvider.notifier);
     final activePanelId = focusController.getActivePanelId();
-    final panelController = ref.read(
-      panelStateProvider(activePanelId).notifier,
-    );
+    final activeTabId = ref.read(panelTabsProvider(activePanelId)).activeTabId;
+    final panelController = ref.read(panelStateProvider(activeTabId).notifier);
 
     final settingsNotifier = ref.read(userSettingsProvider.notifier);
 
-    final panelState = ref.read(panelStateProvider(activePanelId));
+    final panelState = ref.read(panelStateProvider(activeTabId));
     bool isZipFocused = false;
     if (panelState.focusedIndex >= 0 &&
         panelState.focusedIndex < panelState.items.length) {
@@ -59,8 +59,12 @@ class ActionGenerator {
         id: action.id,
         label: action.label,
         shortcut: settingsNotifier.getEffectiveShortcut(action.id),
-        callback: () =>
-            _executeAction(action.id, activePanelId, panelController),
+        callback: () => _executeAction(
+          action.id,
+          activePanelId,
+          activeTabId,
+          panelController,
+        ),
       );
     }).toList();
 
@@ -82,6 +86,7 @@ class ActionGenerator {
             callback: () => _executeAction(
               extractOppositeAction.id,
               activePanelId,
+              activeTabId,
               panelController,
             ),
           ),
@@ -97,6 +102,7 @@ class ActionGenerator {
             callback: () => _executeAction(
               extractHereAction.id,
               activePanelId,
+              activeTabId,
               panelController,
             ),
           ),
@@ -110,22 +116,33 @@ class ActionGenerator {
   void _executeAction(
     String actionId,
     String activePanelId,
+    String activeTabId,
     dynamic panelController,
   ) {
-    final panelState = ref.read(panelStateProvider(activePanelId));
+    final panelState = ref.read(panelStateProvider(activeTabId));
 
     switch (actionId) {
       case 'extractHere':
-        _extractZip(activePanelId, panelController, extractToOpposite: false);
+        _extractZip(
+          activePanelId,
+          activeTabId,
+          panelController,
+          extractToOpposite: false,
+        );
         break;
       case 'extractToOpposite':
-        _extractZip(activePanelId, panelController, extractToOpposite: true);
+        _extractZip(
+          activePanelId,
+          activeTabId,
+          panelController,
+          extractToOpposite: true,
+        );
         break;
       case 'filePreview':
-        _showFilePreview(activePanelId, context);
+        _showFilePreview(activeTabId, context);
         break;
       case 'compress':
-        _compressItems(activePanelId, panelController, context);
+        _compressItems(activeTabId, panelController, context);
         break;
       case 'copyOperation':
         ref.read(operationStatusProvider.notifier).startCopy();
@@ -175,11 +192,7 @@ class ActionGenerator {
         _navigateToTrash(activePanelId, panelController);
         break;
       case 'permanentDelete':
-        _showDeleteConfirmation(
-          activePanelId,
-          panelController,
-          permanent: true,
-        );
+        _showDeleteConfirmation(activeTabId, panelController, permanent: true);
         break;
       case 'selectAll':
         panelController.selectAll();
@@ -278,6 +291,18 @@ class ActionGenerator {
           builder: (context) => const ShortcutsDialog(),
         );
         break;
+      case 'newTab':
+        ref.read(panelTabsProvider(activePanelId).notifier).createTab();
+        break;
+      case 'closeTab':
+        ref.read(panelTabsProvider(activePanelId).notifier).closeActiveTab();
+        break;
+      case 'nextTab':
+        ref.read(panelTabsProvider(activePanelId).notifier).nextTab();
+        break;
+      case 'previousTab':
+        ref.read(panelTabsProvider(activePanelId).notifier).previousTab();
+        break;
     }
   }
 
@@ -321,11 +346,11 @@ class ActionGenerator {
   }
 
   void _showDeleteConfirmation(
-    String activePanelId,
+    String activeTabId,
     dynamic panelController, {
     required bool permanent,
   }) {
-    final panelState = ref.read(panelStateProvider(activePanelId));
+    final panelState = ref.read(panelStateProvider(activeTabId));
     int count = panelState.selectedItems.length;
     if (count == 0 &&
         panelState.focusedIndex >= 0 &&
@@ -413,10 +438,11 @@ class ActionGenerator {
 
   void _extractZip(
     String activePanelId,
+    String activeTabId,
     dynamic panelController, {
     required bool extractToOpposite,
   }) {
-    final panelState = ref.read(panelStateProvider(activePanelId));
+    final panelState = ref.read(panelStateProvider(activeTabId));
     if (panelState.focusedIndex >= 0 &&
         panelState.focusedIndex < panelState.items.length) {
       final item = panelState.items[panelState.focusedIndex];
@@ -426,12 +452,15 @@ class ActionGenerator {
 
         if (extractToOpposite) {
           final oppositePanelId = activePanelId == 'left' ? 'right' : 'left';
+          final oppositeTabId = ref
+              .read(panelTabsProvider(oppositePanelId))
+              .activeTabId;
           destinationPath = ref
-              .read(panelStateProvider(oppositePanelId))
+              .read(panelStateProvider(oppositeTabId))
               .currentPath;
-          // Capture the opposite panel controller now, before the dialog closes
+          // Capture the opposite tab controller now, before the dialog closes
           refreshController = ref.read(
-            panelStateProvider(oppositePanelId).notifier,
+            panelStateProvider(oppositeTabId).notifier,
           );
         } else {
           destinationPath = panelState.currentPath;
@@ -445,8 +474,8 @@ class ActionGenerator {
     }
   }
 
-  void _showFilePreview(String activePanelId, BuildContext context) {
-    final panelState = ref.read(panelStateProvider(activePanelId));
+  void _showFilePreview(String activeTabId, BuildContext context) {
+    final panelState = ref.read(panelStateProvider(activeTabId));
     if (panelState.focusedIndex >= 0 &&
         panelState.focusedIndex < panelState.items.length) {
       final item = panelState.items[panelState.focusedIndex];
@@ -457,11 +486,11 @@ class ActionGenerator {
   }
 
   void _compressItems(
-    String activePanelId,
+    String activeTabId,
     dynamic panelController,
     BuildContext context,
   ) {
-    final panelState = ref.read(panelStateProvider(activePanelId));
+    final panelState = ref.read(panelStateProvider(activeTabId));
     List<String> paths = panelState.selectedItems.toList();
 
     if (paths.isEmpty) {
@@ -508,8 +537,8 @@ class ActionGenerator {
   }
 
   void _showSaveWorkspaceDialog() {
-    final leftState = ref.read(panelStateProvider('left'));
-    final rightState = ref.read(panelStateProvider('right'));
+    final leftTabsState = ref.read(panelTabsProvider('left'));
+    final rightTabsState = ref.read(panelTabsProvider('right'));
     // Capture the notifier before opening the dialog, as the caller's WidgetRef
     // (e.g. OmniDialog) may be disposed before the user submits the dialog.
     final settingsNotifier = ref.read(userSettingsProvider.notifier);
@@ -526,8 +555,10 @@ class ActionGenerator {
       if (name != null && name.toString().isNotEmpty) {
         final workspace = Workspace(
           name: name.toString(),
-          leftPanelPath: leftState.currentPath,
-          rightPanelPath: rightState.currentPath,
+          leftTabs: leftTabsState.tabs,
+          leftActiveTabIndex: leftTabsState.activeTabIndex,
+          rightTabs: rightTabsState.tabs,
+          rightActiveTabIndex: rightTabsState.activeTabIndex,
         );
         settingsNotifier.addWorkspace(workspace);
       }

@@ -11,10 +11,12 @@ import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
+import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
 import 'package:fima/presentation/widgets/panel/draggable_file_item.dart';
 import 'package:fima/presentation/widgets/panel/drop_target_item.dart';
+import 'package:fima/presentation/widgets/panel/panel_tab_bar.dart';
 import 'package:fima/presentation/widgets/panel/rename_field.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -59,9 +61,13 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   static const double _splitterWidth = 8.0;
   static const double _splitterLineWidth = 1.0;
 
+  final Map<String, double> _scrollOffsets = {};
   int? _lastTappedIndex;
   DateTime? _lastTapTime;
   static const _doubleTapDelay = Duration(milliseconds: 300);
+
+  String get _activeTabId =>
+      ref.read(panelTabsProvider(widget.panelId)).activeTabId;
 
   @override
   void initState() {
@@ -70,16 +76,11 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     _pathController = TextEditingController();
     _pathFocusNode = FocusNode(onKeyEvent: _handlePathKeyEvent);
     _pathFocusNode.addListener(_onPathFocusChanged);
-    // Initialize the panel with provided path or default (home)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Only initialize if initialPath is provided and not empty
-      final pathToInit =
-          (widget.initialPath != null && widget.initialPath!.isNotEmpty)
-          ? widget.initialPath
-          : null;
-      ref.read(panelStateProvider(widget.panelId).notifier).init(pathToInit);
-
-      // Store initial showHiddenFiles value
+      if (!mounted) return;
+      ref
+          .read(panelTabsProvider(widget.panelId).notifier)
+          .ensureActiveTabLoaded();
       _previousShowHiddenFiles = ref.read(userSettingsProvider).showHiddenFiles;
     });
   }
@@ -174,17 +175,6 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   @override
   void didUpdateWidget(FilePanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Reload if initialPath changes and we're not already at this path
-    if (oldWidget.initialPath != widget.initialPath &&
-        widget.initialPath != null &&
-        widget.initialPath!.isNotEmpty) {
-      final currentState = ref.read(panelStateProvider(widget.panelId));
-      if (currentState.currentPath != widget.initialPath) {
-        ref
-            .read(panelStateProvider(widget.panelId).notifier)
-            .loadPath(widget.initialPath!, addToVisited: false);
-      }
-    }
   }
 
   String _formatSize(int bytes) {
@@ -291,6 +281,8 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       if (paths.any((path) => path == targetPath)) return;
 
       final sourcePanelId = dragState.sourcePanelId!;
+      final sourceTabId = dragState.sourceTabId;
+      final destTabId = _activeTabId;
       ref.read(dragStateProvider.notifier).endDrag();
 
       await ref
@@ -298,12 +290,15 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           .startDropOperation(
             sourcePaths: paths,
             sourcePanelId: sourcePanelId,
+            sourceTabId: sourceTabId,
             destinationPanelId: widget.panelId,
+            destinationTabId: destTabId,
             destinationPath: targetPath,
             isCopy: false,
           );
     } else {
       // External drag: copy each file into targetPath.
+      final destTabId = _activeTabId;
       final repository = ref.read(fileSystemRepositoryProvider);
       for (final dropItem in event.session.items) {
         final reader = dropItem.dataReader;
@@ -326,20 +321,24 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           }
         }
       }
-      // Refresh the panel that received the drop.
-      await ref
-          .read(panelStateProvider(widget.panelId).notifier)
-          .loadPath(
-            targetPath,
-            addToVisited: false,
-            preserveFocusedIndex: true,
-          );
+      // Refresh the tab that received the drop.
+      if (ref
+          .read(panelTabsProvider(widget.panelId).notifier)
+          .hasTab(destTabId)) {
+        await ref
+            .read(panelStateProvider(destTabId).notifier)
+            .loadPath(
+              targetPath,
+              addToVisited: false,
+              preserveFocusedIndex: true,
+            );
+      }
     }
   }
 
   void _onPathFocusChanged() {
     if (!_pathFocusNode.hasFocus) {
-      final panelState = ref.read(panelStateProvider(widget.panelId));
+      final panelState = ref.read(panelStateProvider(_activeTabId));
       if (panelState.isEditingPath) {
         _cancelPathEditing(restoreFocus: false);
       }
@@ -355,7 +354,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (!ref.read(panelStateProvider(widget.panelId)).isEditingPath) return;
+      if (!ref.read(panelStateProvider(_activeTabId)).isEditingPath) return;
       _pathFocusNode.requestFocus();
       _selectAllPathText();
     });
@@ -401,8 +400,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     if (_isValidatingPath) return;
     _isValidatingPath = true;
 
+    final tabId = _activeTabId;
     final input = _pathController.text;
-    final controller = ref.read(panelStateProvider(widget.panelId).notifier);
+    final controller = ref.read(panelStateProvider(tabId).notifier);
     final error = await controller.navigateToPath(input);
 
     if (!mounted) return;
@@ -420,7 +420,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
         _pathError = error;
       });
       ref.read(overlayProvider.notifier).showToast(error, isError: true);
-      if (ref.read(panelStateProvider(widget.panelId)).isEditingPath &&
+      if (ref.read(panelStateProvider(tabId)).isEditingPath &&
           !_pathFocusNode.hasFocus) {
         _pathFocusNode.requestFocus();
       }
@@ -428,8 +428,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   }
 
   void _cancelPathEditing({required bool restoreFocus}) {
-    final controller = ref.read(panelStateProvider(widget.panelId).notifier);
-    final panelState = ref.read(panelStateProvider(widget.panelId));
+    final tabId = _activeTabId;
+    final controller = ref.read(panelStateProvider(tabId).notifier);
+    final panelState = ref.read(panelStateProvider(tabId));
     if (!panelState.isEditingPath) return;
 
     _pathController.text = panelState.currentPath;
@@ -446,9 +447,13 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
-        final leftEditing = ref.read(panelStateProvider('left')).isEditingPath;
+        final leftTabId = ref.read(panelTabsProvider('left')).activeTabId;
+        final rightTabId = ref.read(panelTabsProvider('right')).activeTabId;
+        final leftEditing = ref
+            .read(panelStateProvider(leftTabId))
+            .isEditingPath;
         final rightEditing = ref
-            .read(panelStateProvider('right'))
+            .read(panelStateProvider(rightTabId))
             .isEditingPath;
         if (leftEditing || rightEditing) return;
 
@@ -553,7 +558,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
 
   /// Shows confirmation for disconnecting SSH and then disconnects.
   Future<void> _confirmDisconnect() async {
-    final controller = ref.read(panelStateProvider(widget.panelId).notifier);
+    final controller = ref.read(panelStateProvider(_activeTabId).notifier);
     final confirmed = await showDialog<bool>(
       context: context,
       barrierColor: Colors.black54,
@@ -633,13 +638,20 @@ class _FilePanelState extends ConsumerState<FilePanel> {
 
   @override
   Widget build(BuildContext context) {
-    final panelState = ref.watch(panelStateProvider(widget.panelId));
-    final controller = ref.read(panelStateProvider(widget.panelId).notifier);
+    final tabsState = ref.watch(panelTabsProvider(widget.panelId));
+    final activeTabId = tabsState.activeTabId;
+    final panelState = ref.watch(panelStateProvider(activeTabId));
+    final controller = ref.read(panelStateProvider(activeTabId).notifier);
     final fimaTheme = ref.watch(themeProvider);
     final theme = Theme.of(context);
     final settings = ref.watch(userSettingsProvider);
     final fontSize = settings.fontSize;
     final itemHeight = fontSize + 16.0;
+
+    // Prune scroll offsets for closed tabs
+    _scrollOffsets.removeWhere(
+      (id, _) => !tabsState.tabs.any((t) => t.id == id),
+    );
 
     // Check if showHiddenFiles setting changed and refresh if needed
     if (_previousShowHiddenFiles != settings.showHiddenFiles) {
@@ -654,7 +666,36 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       }
     }
 
-    ref.listen(panelStateProvider(widget.panelId), (previous, next) {
+    ref.listen(panelTabsProvider(widget.panelId).select((s) => s.activeTabId), (
+      previousTabId,
+      nextTabId,
+    ) {
+      if (previousTabId != null && previousTabId != nextTabId) {
+        if (_scrollController.hasClients) {
+          _scrollOffsets[previousTabId] = _scrollController.offset;
+        }
+        if (_pathError != null) {
+          setState(() {
+            _pathError = null;
+          });
+        }
+        final prevState = ref.read(panelStateProvider(previousTabId));
+        if (prevState.isEditingPath) {
+          ref
+              .read(panelStateProvider(previousTabId).notifier)
+              .stopEditingPath();
+        }
+
+        final targetOffset = _scrollOffsets[nextTabId] ?? 0.0;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_scrollController.hasClients) return;
+          final maxExtent = _scrollController.position.maxScrollExtent;
+          _scrollController.jumpTo(targetOffset.clamp(0.0, maxExtent));
+        });
+      }
+    });
+
+    ref.listen(panelStateProvider(activeTabId), (previous, next) {
       if (previous?.focusedIndex != next.focusedIndex) {
         _scrollToIndex(next.focusedIndex, next.items.length, itemHeight);
       }
@@ -699,6 +740,32 @@ class _FilePanelState extends ConsumerState<FilePanel> {
             ),
             child: Column(
               children: [
+                // Tab bar (shown when 2+ tabs exist in this panel)
+                PanelTabBar(
+                  tabs: tabsState.tabs,
+                  activeTabIndex: tabsState.activeTabIndex,
+                  fimaTheme: fimaTheme,
+                  fontSize: fontSize,
+                  remoteConnections: settings.remoteConnections,
+                  onSelectTab: (index) {
+                    _panelFocusNode.requestFocus();
+                    ref
+                        .read(focusProvider.notifier)
+                        .setActivePanel(
+                          widget.panelId == 'left'
+                              ? ActivePanel.left
+                              : ActivePanel.right,
+                        );
+                    ref
+                        .read(panelTabsProvider(widget.panelId).notifier)
+                        .selectTab(index);
+                  },
+                  onCloseTab: (tabId) {
+                    ref
+                        .read(panelTabsProvider(widget.panelId).notifier)
+                        .closeTab(tabId);
+                  },
+                ),
                 // SSH header (shown only for SSH paths)
                 if (panelState.currentPath.startsWith('ssh://'))
                   _buildSshHeader(panelState, fimaTheme, theme, fontSize),
@@ -982,6 +1049,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                             item: item,
                             panelState: panelState,
                             panelId: widget.panelId,
+                            tabId: activeTabId,
                             child: itemRow,
                           );
                         },

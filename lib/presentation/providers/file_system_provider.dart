@@ -2,6 +2,7 @@ import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/entity/panel_state.dart';
 import 'package:fima/domain/repository/file_system_repository.dart';
 import 'package:fima/infrastructure/repository/local_file_system_repository.dart';
+import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,45 +26,67 @@ final fileSystemRepositoryProvider = Provider<FileSystemRepository>((ref) {
 final panelStateProvider =
     StateNotifierProvider.family<PanelController, PanelState, String>((
       ref,
-      panelId,
+      tabId,
     ) {
       return PanelController(
         ref.read(fileSystemRepositoryProvider),
         ref,
-        panelId,
+        tabId,
       );
     });
 
 class PanelController extends StateNotifier<PanelState> {
   final FileSystemRepository _repository;
   final Ref _ref;
-  final String _panelId;
+  final String _tabId;
+  String? _panelId;
+  bool? _loadedShowHiddenFiles;
   List<FileSystemItem> _allItems = [];
 
-  PanelController(this._repository, this._ref, this._panelId)
+  PanelController(this._repository, this._ref, this._tabId)
     : super(const PanelState());
 
-  Future<void> init(String? initialPath) async {
-    final settings = _ref.read(userSettingsProvider);
-    final isLeft = _panelId == 'left';
-    final sortColIndex = isLeft
-        ? settings.leftPanelSortColumn
-        : settings.rightPanelSortColumn;
-    final sortAscending = isLeft
-        ? settings.leftPanelSortAscending
-        : settings.rightPanelSortAscending;
+  bool get needsHiddenFilesRefresh =>
+      _loadedShowHiddenFiles != null &&
+      _loadedShowHiddenFiles != _ref.read(userSettingsProvider).showHiddenFiles;
 
-    final sortColumn =
-        sortColIndex >= 0 && sortColIndex < SortColumn.values.length
+  SortColumn _resolveSortColumn(int sortColIndex) {
+    return sortColIndex >= 0 && sortColIndex < SortColumn.values.length
         ? SortColumn.values[sortColIndex]
         : SortColumn.name;
+  }
 
+  /// Sets initial SSH path and sort metadata on a tab before the connection is
+  /// established so the UI shows the connection header while authenticating.
+  void primeSshTabState({
+    required String panelId,
+    required String sshPath,
+    required int sortColumn,
+    required bool sortAscending,
+  }) {
+    _panelId = panelId;
     state = state.copyWith(
-      sortColumn: sortColumn,
+      currentPath: sshPath,
+      sortColumn: _resolveSortColumn(sortColumn),
+      sortAscending: sortAscending,
+    );
+  }
+
+  Future<void> initTab({
+    required String panelId,
+    String? initialPath,
+    int sortColumn = 0,
+    bool sortAscending = true,
+  }) async {
+    _panelId = panelId;
+    state = state.copyWith(
+      sortColumn: _resolveSortColumn(sortColumn),
       sortAscending: sortAscending,
     );
 
-    final path = initialPath ?? await _repository.getHomeDirectory();
+    final path = (initialPath != null && initialPath.isNotEmpty)
+        ? initialPath
+        : await _repository.getHomeDirectory();
     await loadPath(path, addToVisited: false);
   }
 
@@ -200,6 +223,7 @@ class PanelController extends StateNotifier<PanelState> {
     );
 
     _allItems = sortedItems;
+    _loadedShowHiddenFiles = _ref.read(userSettingsProvider).showHiddenFiles;
 
     _savePath(path);
 
@@ -232,13 +256,13 @@ class PanelController extends StateNotifier<PanelState> {
 
   void _savePath(String path) {
     try {
-      if (_panelId == 'left') {
-        _ref.read(userSettingsProvider.notifier).setLeftPanelPath(path);
-      } else if (_panelId == 'right') {
-        _ref.read(userSettingsProvider.notifier).setRightPanelPath(path);
+      if (_panelId != null) {
+        _ref
+            .read(panelTabsProvider(_panelId!).notifier)
+            .updateTabPath(_tabId, path);
       }
     } catch (e) {
-      debugPrint('Error saving path to settings: $e');
+      debugPrint('Error saving path to tab settings: $e');
     }
   }
 
@@ -455,15 +479,11 @@ class PanelController extends StateNotifier<PanelState> {
       items: sortedItems,
     );
 
-    // Persist sort preference to settings
-    if (_panelId == 'left') {
+    // Persist sort preference for this tab
+    if (_panelId != null) {
       _ref
-          .read(userSettingsProvider.notifier)
-          .setLeftPanelSort(column.index, ascending);
-    } else if (_panelId == 'right') {
-      _ref
-          .read(userSettingsProvider.notifier)
-          .setRightPanelSort(column.index, ascending);
+          .read(panelTabsProvider(_panelId!).notifier)
+          .updateTabSort(_tabId, column.index, ascending);
     }
 
     // Update _allItems with the new sort order

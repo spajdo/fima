@@ -1,3 +1,4 @@
+import 'package:fima/domain/entity/panel_tab.dart';
 import 'package:fima/domain/entity/user_settings.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -10,7 +11,9 @@ void main() {
 
     test('copyWith should preserve showHiddenFiles when not specified', () {
       final settings = UserSettings.defaultSettings();
-      final updated = settings.copyWith(leftPanelPath: '/new/path');
+      final updated = settings.copyWith(
+        leftTabs: [PanelTab.create(path: '/new/path')],
+      );
       expect(updated.showHiddenFiles, false);
     });
 
@@ -57,7 +60,7 @@ void main() {
     test('fromJson and toJson should be consistent', () {
       final original = UserSettings.defaultSettings().copyWith(
         showHiddenFiles: true,
-        leftPanelPath: '/test/path',
+        leftTabs: [PanelTab.create(path: '/test/path')],
       );
 
       final json = original.toJson();

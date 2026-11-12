@@ -1,4 +1,5 @@
 import 'package:fima/domain/entity/key_map_action.dart';
+import 'package:fima/domain/entity/panel_tab.dart';
 import 'package:fima/domain/entity/path_index_entry.dart';
 import 'package:fima/domain/entity/remote_connection.dart';
 import 'package:fima/domain/entity/user_settings.dart';
@@ -34,34 +35,21 @@ class SettingsController extends StateNotifier<UserSettings> {
     await _service.save(state);
   }
 
-  /// Update left panel path
-  void setLeftPanelPath(String path) {
-    state = state.copyWith(leftPanelPath: path);
-    save(); // Auto-save
-  }
-
-  /// Update right panel path
-  void setRightPanelPath(String path) {
-    state = state.copyWith(rightPanelPath: path);
-    save(); // Auto-save
-  }
-
-  /// Update left panel sort column
-  void setLeftPanelSort(int column, bool ascending) {
-    state = state.copyWith(
-      leftPanelSortColumn: column,
-      leftPanelSortAscending: ascending,
-    );
-    save(); // Auto-save
-  }
-
-  /// Update right panel sort column
-  void setRightPanelSort(int column, bool ascending) {
-    state = state.copyWith(
-      rightPanelSortColumn: column,
-      rightPanelSortAscending: ascending,
-    );
-    save(); // Auto-save
+  /// Persist the full tab list and active tab index for [panelId] ('left' or 'right').
+  void setPanelTabs(String panelId, List<PanelTab> tabs, int activeTabIndex) {
+    if (tabs.isEmpty) return;
+    final clampedIndex = activeTabIndex.clamp(0, tabs.length - 1);
+    if (panelId == 'left') {
+      state = state.copyWith(leftTabs: tabs, leftActiveTabIndex: clampedIndex);
+    } else if (panelId == 'right') {
+      state = state.copyWith(
+        rightTabs: tabs,
+        rightActiveTabIndex: clampedIndex,
+      );
+    } else {
+      return;
+    }
+    save();
   }
 
   /// Update panel split ratio
@@ -177,10 +165,13 @@ class SettingsController extends StateNotifier<UserSettings> {
     while (newIndexes.length > state.maxPathIndexes) {
       // Protect the most recently visited paths (e.g. roughly 30% of max items)
       final protectedCount = (state.maxPathIndexes / 3).ceil().clamp(1, 20);
-      
+
       final timeSorted = List<PathIndexEntry>.from(newIndexes)
         ..sort((a, b) => b.lastVisited.compareTo(a.lastVisited));
-      final protectedPaths = timeSorted.take(protectedCount).map((e) => e.path).toSet();
+      final protectedPaths = timeSorted
+          .take(protectedCount)
+          .map((e) => e.path)
+          .toSet();
 
       // Find the item with the lowest visitsCount that is NOT protected
       int targetIndex = newIndexes.length - 1;
@@ -190,7 +181,7 @@ class SettingsController extends StateNotifier<UserSettings> {
           break;
         }
       }
-      
+
       newIndexes.removeAt(targetIndex);
     }
 

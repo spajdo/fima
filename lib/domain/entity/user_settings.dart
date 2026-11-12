@@ -1,10 +1,14 @@
+import 'package:fima/domain/entity/key_map_action.dart';
+import 'package:fima/domain/entity/panel_tab.dart';
 import 'package:fima/domain/entity/path_index_entry.dart';
 import 'package:fima/domain/entity/remote_connection.dart';
 import 'package:fima/domain/entity/workspace.dart';
 
 class UserSettings {
-  final String leftPanelPath;
-  final String rightPanelPath;
+  final List<PanelTab> leftTabs;
+  final int leftActiveTabIndex;
+  final List<PanelTab> rightTabs;
+  final int rightActiveTabIndex;
   final double panelSplitRatio;
   final double fontSize;
   final bool showHiddenFiles;
@@ -20,15 +24,13 @@ class UserSettings {
   final Map<String, String> keyMap;
   final bool useBuiltInTerminal;
   final List<RemoteConnection> remoteConnections;
-  final int leftPanelSortColumn;
-  final bool leftPanelSortAscending;
-  final int rightPanelSortColumn;
-  final bool rightPanelSortAscending;
   final bool showWalkthroughOnStartup;
 
   const UserSettings({
-    required this.leftPanelPath,
-    required this.rightPanelPath,
+    required this.leftTabs,
+    this.leftActiveTabIndex = 0,
+    required this.rightTabs,
+    this.rightActiveTabIndex = 0,
     this.panelSplitRatio = 0.5,
     this.fontSize = 14.0,
     this.showHiddenFiles = false,
@@ -44,46 +46,136 @@ class UserSettings {
     this.keyMap = const {},
     this.useBuiltInTerminal = false,
     this.remoteConnections = const [],
-    this.leftPanelSortColumn = 0,
-    this.leftPanelSortAscending = true,
-    this.rightPanelSortColumn = 0,
-    this.rightPanelSortAscending = true,
     this.showWalkthroughOnStartup = true,
   });
 
-  // Default settings
+  PanelTab get activeLeftTab {
+    if (leftTabs.isEmpty) return const PanelTab(id: 'left_fallback');
+    return leftTabs[leftActiveTabIndex.clamp(0, leftTabs.length - 1)];
+  }
+
+  PanelTab get activeRightTab {
+    if (rightTabs.isEmpty) return const PanelTab(id: 'right_fallback');
+    return rightTabs[rightActiveTabIndex.clamp(0, rightTabs.length - 1)];
+  }
+
+  String get leftPanelPath => activeLeftTab.path;
+  String get rightPanelPath => activeRightTab.path;
+  int get leftPanelSortColumn => activeLeftTab.sortColumn;
+  bool get leftPanelSortAscending => activeLeftTab.sortAscending;
+  int get rightPanelSortColumn => activeRightTab.sortColumn;
+  bool get rightPanelSortAscending => activeRightTab.sortAscending;
+
+  /// Returns `true` when [json] is in a legacy format that should be migrated
+  /// and persisted in the current tab-based schema.
+  static bool needsMigration(Map<String, dynamic> json) {
+    if (!json.containsKey('leftTabs') || !json.containsKey('rightTabs')) {
+      return true;
+    }
+
+    final rawWorkspaces = json['workspaces'];
+    if (rawWorkspaces is List) {
+      for (final item in rawWorkspaces) {
+        if (item is Map<String, dynamic> && Workspace.isLegacyJson(item)) {
+          return true;
+        }
+      }
+    }
+
+    final rawKeyMap = json['keyMap'];
+    if (rawKeyMap is Map<String, dynamic>) {
+      final wsShortcut = rawKeyMap['workspaceDialog'] as String?;
+      if (wsShortcut != null &&
+          (KeyMapActionDefs.shortcutsMatch(wsShortcut, 'Ctrl+W') ||
+              KeyMapActionDefs.shortcutsMatch(wsShortcut, '⌘ + W'))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   factory UserSettings.defaultSettings() {
-    return const UserSettings(
-      leftPanelPath: '', // Empty means use home directory
-      rightPanelPath: '',
+    return UserSettings(
+      leftTabs: [PanelTab.create(path: '')],
+      leftActiveTabIndex: 0,
+      rightTabs: [PanelTab.create(path: '')],
+      rightActiveTabIndex: 0,
       panelSplitRatio: 0.5,
       fontSize: 14.0,
-      showHiddenFiles: false, // Hidden files are hidden by default
-      windowWidth: 1280.0, // Default window width
-      windowHeight: 720.0, // Default window height
-      windowX: null, // Will be centered by system
-      windowY: null, // Will be centered by system
+      showHiddenFiles: false,
+      windowWidth: 1280.0,
+      windowHeight: 720.0,
+      windowX: null,
+      windowY: null,
       windowMaximized: false,
-      pathIndexes: [],
+      pathIndexes: const [],
       maxPathIndexes: 50,
-      workspaces: [],
+      workspaces: const [],
       themeName: 'Light',
-      keyMap: {},
+      keyMap: const {},
       useBuiltInTerminal: false,
-      remoteConnections: [],
-      leftPanelSortColumn: 0,
-      leftPanelSortAscending: true,
-      rightPanelSortColumn: 0,
-      rightPanelSortAscending: true,
+      remoteConnections: const [],
       showWalkthroughOnStartup: true,
     );
   }
 
-  // From JSON
   factory UserSettings.fromJson(Map<String, dynamic> json) {
+    List<PanelTab> parsePanelTabs({
+      required dynamic rawTabs,
+      required String legacyPath,
+      required int legacySortCol,
+      required bool legacySortAsc,
+    }) {
+      if (rawTabs is List && rawTabs.isNotEmpty) {
+        return rawTabs
+            .map((e) => PanelTab.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+      return [
+        PanelTab.create(
+          path: legacyPath,
+          sortColumn: legacySortCol,
+          sortAscending: legacySortAsc,
+        ),
+      ];
+    }
+
+    final leftTabs = parsePanelTabs(
+      rawTabs: json['leftTabs'],
+      legacyPath: json['leftPanelPath'] as String? ?? '',
+      legacySortCol: json['leftPanelSortColumn'] as int? ?? 0,
+      legacySortAsc: json['leftPanelSortAscending'] as bool? ?? true,
+    );
+    final rightTabs = parsePanelTabs(
+      rawTabs: json['rightTabs'],
+      legacyPath: json['rightPanelPath'] as String? ?? '',
+      legacySortCol: json['rightPanelSortColumn'] as int? ?? 0,
+      legacySortAsc: json['rightPanelSortAscending'] as bool? ?? true,
+    );
+
+    final rawLeftIdx = json['leftActiveTabIndex'] as int? ?? 0;
+    final rawRightIdx = json['rightActiveTabIndex'] as int? ?? 0;
+
+    final parsedKeyMap =
+        (json['keyMap'] as Map<String, dynamic>?)?.map(
+          (key, value) => MapEntry(key, value as String),
+        ) ??
+        <String, String>{};
+
+    // Migrate old workspaceDialog shortcut if it conflicts with closeTab.
+    final wsShortcut = parsedKeyMap['workspaceDialog'];
+    if (wsShortcut != null &&
+        (KeyMapActionDefs.shortcutsMatch(wsShortcut, 'Ctrl+W') ||
+            KeyMapActionDefs.shortcutsMatch(wsShortcut, '⌘ + W'))) {
+      parsedKeyMap.remove('workspaceDialog');
+    }
+
     return UserSettings(
-      leftPanelPath: json['leftPanelPath'] as String? ?? '',
-      rightPanelPath: json['rightPanelPath'] as String? ?? '',
+      leftTabs: leftTabs,
+      leftActiveTabIndex: rawLeftIdx.clamp(0, leftTabs.length - 1),
+      rightTabs: rightTabs,
+      rightActiveTabIndex: rawRightIdx.clamp(0, rightTabs.length - 1),
       panelSplitRatio: (json['panelSplitRatio'] as num?)?.toDouble() ?? 0.5,
       fontSize: (json['fontSize'] as num?)?.toDouble() ?? 14.0,
       showHiddenFiles: json['showHiddenFiles'] as bool? ?? false,
@@ -100,29 +192,22 @@ class UserSettings {
           .map((e) => Workspace.fromJson(e as Map<String, dynamic>))
           .toList(),
       themeName: json['themeName'] as String? ?? 'Light',
-      keyMap:
-          (json['keyMap'] as Map<String, dynamic>?)?.map(
-            (key, value) => MapEntry(key, value as String),
-          ) ??
-          {},
+      keyMap: parsedKeyMap,
       useBuiltInTerminal: json['useBuiltInTerminal'] as bool? ?? false,
       remoteConnections: (json['remoteConnections'] as List? ?? [])
           .map((e) => RemoteConnection.fromJson(e as Map<String, dynamic>))
           .toList(),
-      leftPanelSortColumn: json['leftPanelSortColumn'] as int? ?? 0,
-      leftPanelSortAscending: json['leftPanelSortAscending'] as bool? ?? true,
-      rightPanelSortColumn: json['rightPanelSortColumn'] as int? ?? 0,
-      rightPanelSortAscending: json['rightPanelSortAscending'] as bool? ?? true,
       showWalkthroughOnStartup:
           json['showWalkthroughOnStartup'] as bool? ?? true,
     );
   }
 
-  // To JSON
   Map<String, dynamic> toJson() {
     return {
-      'leftPanelPath': leftPanelPath,
-      'rightPanelPath': rightPanelPath,
+      'leftTabs': leftTabs.map((t) => t.toJson()).toList(),
+      'leftActiveTabIndex': leftActiveTabIndex,
+      'rightTabs': rightTabs.map((t) => t.toJson()).toList(),
+      'rightActiveTabIndex': rightActiveTabIndex,
       'panelSplitRatio': panelSplitRatio,
       'fontSize': fontSize,
       'showHiddenFiles': showHiddenFiles,
@@ -138,18 +223,15 @@ class UserSettings {
       'keyMap': keyMap,
       'useBuiltInTerminal': useBuiltInTerminal,
       'remoteConnections': remoteConnections.map((e) => e.toJson()).toList(),
-      'leftPanelSortColumn': leftPanelSortColumn,
-      'leftPanelSortAscending': leftPanelSortAscending,
-      'rightPanelSortColumn': rightPanelSortColumn,
-      'rightPanelSortAscending': rightPanelSortAscending,
       'showWalkthroughOnStartup': showWalkthroughOnStartup,
     };
   }
 
-  // CopyWith
   UserSettings copyWith({
-    String? leftPanelPath,
-    String? rightPanelPath,
+    List<PanelTab>? leftTabs,
+    int? leftActiveTabIndex,
+    List<PanelTab>? rightTabs,
+    int? rightActiveTabIndex,
     double? panelSplitRatio,
     double? fontSize,
     bool? showHiddenFiles,
@@ -165,15 +247,13 @@ class UserSettings {
     Map<String, String>? keyMap,
     bool? useBuiltInTerminal,
     List<RemoteConnection>? remoteConnections,
-    int? leftPanelSortColumn,
-    bool? leftPanelSortAscending,
-    int? rightPanelSortColumn,
-    bool? rightPanelSortAscending,
     bool? showWalkthroughOnStartup,
   }) {
     return UserSettings(
-      leftPanelPath: leftPanelPath ?? this.leftPanelPath,
-      rightPanelPath: rightPanelPath ?? this.rightPanelPath,
+      leftTabs: leftTabs ?? this.leftTabs,
+      leftActiveTabIndex: leftActiveTabIndex ?? this.leftActiveTabIndex,
+      rightTabs: rightTabs ?? this.rightTabs,
+      rightActiveTabIndex: rightActiveTabIndex ?? this.rightActiveTabIndex,
       panelSplitRatio: panelSplitRatio ?? this.panelSplitRatio,
       fontSize: fontSize ?? this.fontSize,
       showHiddenFiles: showHiddenFiles ?? this.showHiddenFiles,
@@ -189,12 +269,6 @@ class UserSettings {
       keyMap: keyMap ?? this.keyMap,
       useBuiltInTerminal: useBuiltInTerminal ?? this.useBuiltInTerminal,
       remoteConnections: remoteConnections ?? this.remoteConnections,
-      leftPanelSortColumn: leftPanelSortColumn ?? this.leftPanelSortColumn,
-      leftPanelSortAscending:
-          leftPanelSortAscending ?? this.leftPanelSortAscending,
-      rightPanelSortColumn: rightPanelSortColumn ?? this.rightPanelSortColumn,
-      rightPanelSortAscending:
-          rightPanelSortAscending ?? this.rightPanelSortAscending,
       showWalkthroughOnStartup:
           showWalkthroughOnStartup ?? this.showWalkthroughOnStartup,
     );

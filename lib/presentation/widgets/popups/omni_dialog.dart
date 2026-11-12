@@ -7,6 +7,7 @@ import 'package:fima/infrastructure/service/secure_password_service.dart';
 import 'package:fima/presentation/providers/action_provider.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
+import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
 import 'package:fima/presentation/widgets/popups/connect_server_dialog.dart';
@@ -216,19 +217,18 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
   void _navigateToPath(String path) {
     final focusController = ref.read(focusProvider.notifier);
     final activePanelId = focusController.getActivePanelId();
-    final panelController = ref.read(
-      panelStateProvider(activePanelId).notifier,
-    );
+    final activeTabId = ref.read(panelTabsProvider(activePanelId)).activeTabId;
+    final panelController = ref.read(panelStateProvider(activeTabId).notifier);
     panelController.loadPath(path);
   }
 
   void _loadWorkspace(Workspace workspace) {
     ref
-        .read(panelStateProvider('left').notifier)
-        .loadPath(workspace.leftPanelPath, addToVisited: false);
+        .read(panelTabsProvider('left').notifier)
+        .applyTabs(workspace.leftTabs, workspace.leftActiveTabIndex);
     ref
-        .read(panelStateProvider('right').notifier)
-        .loadPath(workspace.rightPanelPath, addToVisited: false);
+        .read(panelTabsProvider('right').notifier)
+        .applyTabs(workspace.rightTabs, workspace.rightActiveTabIndex);
   }
 
   void _deleteWorkspace(Workspace workspace) {
@@ -607,7 +607,8 @@ class _OmniDialogState extends ConsumerState<OmniDialog> {
     final sshRepo = compoundRepo.sshRepository;
     final focusController = ref.read(focusProvider.notifier);
     final activePanelId = focusController.getActivePanelId();
-    final panelNotifier = ref.read(panelStateProvider(activePanelId).notifier);
+    final activeTabId = ref.read(panelTabsProvider(activePanelId)).activeTabId;
+    final panelNotifier = ref.read(panelStateProvider(activeTabId).notifier);
 
     if (!sshRepo.isConnected(connection.id)) {
       // Try remembered password first.

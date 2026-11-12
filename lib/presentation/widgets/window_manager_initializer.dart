@@ -1,7 +1,10 @@
 import 'dart:async';
 
+import 'package:fima/domain/entity/remote_connection.dart';
+import 'package:fima/infrastructure/repository/compound_file_system_repository.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/global_hotkey_provider.dart';
+import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -149,18 +152,36 @@ class _WindowManagerInitializerState
 
   @override
   void onWindowClose() async {
-    // Save final window state before closing
+    // Save final window state and disconnect any active SSH sessions before closing
     await _saveWindowState();
+    try {
+      final repo = ref.read(fileSystemRepositoryProvider);
+      if (repo is CompoundFileSystemRepository) {
+        await repo.sshRepository.disconnectAll();
+      }
+    } catch (e) {
+      debugPrint('Error disconnecting SSH sessions on close: $e');
+    }
   }
 
   @override
   void onWindowFocus() {
     debugPrint('WindowManagerInitializer: onWindowFocus triggered');
-    // Refresh both panels when window gains focus
-    // We need to use listen to provider? No, just read is fine for triggering action.
     try {
-      ref.read(panelStateProvider('left').notifier).refresh();
-      ref.read(panelStateProvider('right').notifier).refresh();
+      for (final panelId in ['left', 'right']) {
+        final tabId = ref.read(panelTabsProvider(panelId)).activeTabId;
+        final currentPath = ref.read(panelStateProvider(tabId)).currentPath;
+        if (currentPath.startsWith('ssh://')) {
+          final repo = ref.read(fileSystemRepositoryProvider);
+          if (repo is CompoundFileSystemRepository) {
+            final connId = RemoteConnection.connectionIdFromSshUrl(currentPath);
+            if (!repo.sshRepository.isConnected(connId)) {
+              continue;
+            }
+          }
+        }
+        ref.read(panelStateProvider(tabId).notifier).refresh();
+      }
     } catch (e) {
       debugPrint('Error refreshing panels on focus: $e');
     }

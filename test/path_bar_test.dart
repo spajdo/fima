@@ -2,12 +2,14 @@ import 'dart:io';
 
 import 'package:fima/domain/entity/file_operation.dart';
 import 'package:fima/domain/entity/file_system_item.dart';
+import 'package:fima/domain/entity/panel_tab.dart';
 import 'package:fima/domain/entity/user_settings.dart';
 import 'package:fima/domain/repository/file_system_repository.dart';
 import 'package:fima/infrastructure/service/settings_service.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
+import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/keyboard_handler.dart';
 import 'package:fima/presentation/widgets/main_screen.dart';
@@ -93,8 +95,8 @@ Future<WidgetRef> _pumpApp(
   final settingsService = _InMemorySettingsService()
     ..stored = UserSettings.defaultSettings().copyWith(
       showWalkthroughOnStartup: false,
-      leftPanelPath: '/home/user',
-      rightPanelPath: '/home/other',
+      leftTabs: [PanelTab.create(path: '/home/user')],
+      rightTabs: [PanelTab.create(path: '/home/other')],
     );
 
   late WidgetRef capturedRef;
@@ -170,7 +172,8 @@ void main() {
     await tester.tap(find.text('/home/user'));
     await tester.pumpAndSettle();
 
-    expect(ref.read(panelStateProvider('left')).isEditingPath, isTrue);
+    final leftTabId = ref.read(panelTabsProvider('left')).activeTabId;
+    expect(ref.read(panelStateProvider(leftTabId)).isEditingPath, isTrue);
     final textField = tester.widget<TextField>(find.byType(TextField));
     expect(textField.controller?.text, '/home/user');
     expect(
@@ -196,7 +199,8 @@ void main() {
     await tester.sendKeyUpEvent(modifier);
     await tester.pumpAndSettle();
 
-    expect(ref.read(panelStateProvider('left')).isEditingPath, isTrue);
+    final leftTabId = ref.read(panelTabsProvider('left')).activeTabId;
+    expect(ref.read(panelStateProvider(leftTabId)).isEditingPath, isTrue);
     final textField = tester.widget<TextField>(find.byType(TextField));
     expect(textField.controller?.text, '/home/user');
     expect(
@@ -217,7 +221,8 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 
-    final leftState = ref.read(panelStateProvider('left'));
+    final leftTabId = ref.read(panelTabsProvider('left')).activeTabId;
+    final leftState = ref.read(panelStateProvider(leftTabId));
     expect(leftState.currentPath, '/tmp/target');
     expect(leftState.isEditingPath, isFalse);
     expect(find.byType(TextField), findsNothing);
@@ -237,7 +242,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    final leftState = ref.read(panelStateProvider('left'));
+    final leftTabId = ref.read(panelTabsProvider('left')).activeTabId;
+    final leftState = ref.read(panelStateProvider(leftTabId));
     expect(leftState.currentPath, '/home/user');
     expect(leftState.isEditingPath, isTrue);
 
@@ -271,7 +277,8 @@ void main() {
     await tester.tap(find.text('docs'));
     await tester.pumpAndSettle();
 
-    final leftState = ref.read(panelStateProvider('left'));
+    final leftTabId = ref.read(panelTabsProvider('left')).activeTabId;
+    final leftState = ref.read(panelStateProvider(leftTabId));
     expect(leftState.currentPath, '/home/user');
     expect(leftState.isEditingPath, isFalse);
     expect(find.byType(TextField), findsNothing);
@@ -290,7 +297,8 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    final leftState = ref.read(panelStateProvider('left'));
+    final leftTabId = ref.read(panelTabsProvider('left')).activeTabId;
+    final leftState = ref.read(panelStateProvider(leftTabId));
     expect(leftState.currentPath, '/home/user');
     expect(leftState.isEditingPath, isFalse);
     expect(find.byType(TextField), findsNothing);
@@ -312,8 +320,10 @@ void main() {
       await tester.tap(find.text('/home/other'));
       await tester.pumpAndSettle();
 
-      final leftState = ref.read(panelStateProvider('left'));
-      final rightState = ref.read(panelStateProvider('right'));
+      final leftTabId = ref.read(panelTabsProvider('left')).activeTabId;
+      final rightTabId = ref.read(panelTabsProvider('right')).activeTabId;
+      final leftState = ref.read(panelStateProvider(leftTabId));
+      final rightState = ref.read(panelStateProvider(rightTabId));
       expect(leftState.isEditingPath, isFalse);
       expect(leftState.currentPath, '/home/user');
       expect(rightState.isEditingPath, isTrue);
