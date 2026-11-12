@@ -4,17 +4,17 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   flutter_secure_storage_linux
-  hotkey_manager_linux
   irondash_engine_context
   open_file_linux
   pasteboard
-  screen_retriever
+  screen_retriever_linux
   super_native_extensions
   window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
   flutter_pty
+  jni
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

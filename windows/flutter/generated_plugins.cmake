@@ -4,16 +4,16 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   flutter_secure_storage_windows
-  hotkey_manager_windows
   irondash_engine_context
   pasteboard
-  screen_retriever
+  screen_retriever_windows
   super_native_extensions
   window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
   flutter_pty
+  jni
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)
