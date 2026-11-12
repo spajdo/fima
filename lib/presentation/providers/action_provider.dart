@@ -1,11 +1,13 @@
 import 'dart:io';
 
 import 'package:fima/domain/entity/app_action.dart';
+import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:fima/domain/entity/key_map_action.dart';
 import 'package:fima/domain/entity/workspace.dart';
 import 'package:fima/infrastructure/service/application_service.dart';
 import 'package:fima/infrastructure/service/system_clipboard_service.dart';
+import 'package:fima/presentation/providers/clipboard_actions.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
@@ -16,6 +18,7 @@ import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart'
 import 'package:fima/presentation/widgets/popups/connect_server_dialog.dart';
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
 import 'package:fima/presentation/widgets/popups/file_preview_dialog.dart';
+import 'package:fima/presentation/widgets/popups/item_info_dialog.dart';
 import 'package:fima/presentation/widgets/popups/omni_dialog.dart';
 import 'package:fima/presentation/widgets/popups/shortcuts_dialog.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
@@ -141,6 +144,9 @@ class ActionGenerator {
       case 'filePreview':
         _showFilePreview(activeTabId, context);
         break;
+      case 'showInfo':
+        _showItemInfo(activeTabId, context);
+        break;
       case 'compress':
         _compressItems(activeTabId, panelController, context);
         break;
@@ -226,13 +232,17 @@ class ActionGenerator {
         _copyPathToClipboard(panelState);
         break;
       case 'copyToClipboard':
-        _copyOrCut(panelState, panelController, ClipboardOperation.copy);
+        ref
+            .read(clipboardActionsProvider)
+            .copyOrCut(activeTabId, ClipboardOperation.copy);
         break;
       case 'cutToClipboard':
-        _copyOrCut(panelState, panelController, ClipboardOperation.cut);
+        ref
+            .read(clipboardActionsProvider)
+            .copyOrCut(activeTabId, ClipboardOperation.cut);
         break;
       case 'pasteFromClipboard':
-        panelController.pasteFromClipboard();
+        ref.read(clipboardActionsProvider).paste(activeTabId);
         break;
       case 'moveUp':
         panelController.moveSelectionUp();
@@ -414,28 +424,6 @@ class ActionGenerator {
     }
   }
 
-  void _copyOrCut(
-    dynamic panelState,
-    dynamic panelController,
-    ClipboardOperation operation,
-  ) {
-    List<String> paths = panelState.selectedItems.toList();
-
-    if (paths.isEmpty) {
-      if (panelState.focusedIndex >= 0 &&
-          panelState.focusedIndex < panelState.items.length) {
-        final item = panelState.items[panelState.focusedIndex];
-        if (!item.isParentDetails) {
-          paths.add(item.path);
-        }
-      }
-    }
-
-    if (paths.isNotEmpty) {
-      panelController.copyToClipboard(paths, operation);
-    }
-  }
-
   void _extractZip(
     String activePanelId,
     String activeTabId,
@@ -482,6 +470,34 @@ class ActionGenerator {
       if (!item.isDirectory && !item.isParentDetails) {
         showFilePreviewDialog(context, item);
       }
+    }
+  }
+
+  void _showItemInfo(String activeTabId, BuildContext context) {
+    final panelState = ref.read(panelStateProvider(activeTabId));
+    List<FileSystemItem> targetItems = panelState.items
+        .where(
+          (item) =>
+              panelState.selectedItems.contains(item.path) &&
+              !item.isParentDetails,
+        )
+        .toList();
+
+    if (targetItems.isEmpty &&
+        panelState.focusedIndex >= 0 &&
+        panelState.focusedIndex < panelState.items.length) {
+      final focused = panelState.items[panelState.focusedIndex];
+      if (!focused.isParentDetails) {
+        targetItems = [focused];
+      }
+    }
+
+    if (targetItems.isNotEmpty) {
+      showItemInfoDialog(
+        context,
+        items: targetItems,
+        currentPath: panelState.currentPath,
+      );
     }
   }
 

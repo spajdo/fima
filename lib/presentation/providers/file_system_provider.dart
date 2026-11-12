@@ -892,6 +892,32 @@ class PanelController extends StateNotifier<PanelState> {
     }
   }
 
+  Future<void> revealInFileManager(
+    String path, {
+    required bool isDirectory,
+  }) async {
+    if (isDirectory) {
+      await openFileManager(path);
+      return;
+    }
+
+    if (Platform.isMacOS) {
+      try {
+        await Process.run('open', ['-R', path]);
+      } catch (e) {
+        debugPrint('Error revealing in Finder on macOS: $e');
+      }
+    } else if (Platform.isWindows) {
+      try {
+        await Process.run('explorer', ['/select,$path']);
+      } catch (e) {
+        debugPrint('Error revealing in Explorer on Windows: $e');
+      }
+    } else {
+      await openFileManager(p.dirname(path));
+    }
+  }
+
   Future<void> openWithApplication(DesktopApplication app, String path) async {
     if (Platform.isLinux) {
       try {

@@ -78,6 +78,7 @@ class _ShortcutsDialogState extends ConsumerState<ShortcutsDialog> {
         _ShortcutEntry('Move to Trash', s('deleteToTrash')),
         _ShortcutEntry('Permanent Delete', s('permanentDelete')),
         _ShortcutEntry('File Preview', s('filePreview')),
+        _ShortcutEntry('Info', s('showInfo')),
         _ShortcutEntry('Open With...', s('openWith')),
         _ShortcutEntry('Open Default File Manager', s('openDefaultManager')),
         _ShortcutEntry('Toggle Hidden Files', s('toggleHiddenFiles')),

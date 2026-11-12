@@ -1,15 +1,15 @@
 import 'dart:io';
 
-import 'package:fima/domain/entity/file_operation.dart';
+import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/entity/key_map_action.dart';
 import 'package:fima/domain/entity/workspace.dart';
 import 'package:fima/infrastructure/service/keyboard_utils.dart';
 import 'package:fima/infrastructure/service/application_service.dart';
 import 'package:fima/infrastructure/service/system_clipboard_service.dart';
+import 'package:fima/presentation/providers/clipboard_actions.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 
-import 'package:fima/presentation/providers/internal_clipboard_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
 import 'package:fima/presentation/providers/panel_tabs_provider.dart';
@@ -18,6 +18,7 @@ import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart'
 import 'package:fima/presentation/widgets/popups/connect_server_dialog.dart';
 import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
 import 'package:fima/presentation/widgets/popups/file_preview_dialog.dart';
+import 'package:fima/presentation/widgets/popups/item_info_dialog.dart';
 import 'package:fima/presentation/widgets/popups/omni_dialog.dart';
 import 'package:fima/presentation/widgets/popups/shortcuts_dialog.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
@@ -370,37 +371,6 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
     });
   }
 
-  Future<void> _copyToClipboard(
-    WidgetRef ref,
-    String activeTabId,
-    ClipboardOperation operation,
-  ) async {
-    final panelState = ref.read(panelStateProvider(activeTabId));
-    List<String> paths = panelState.selectedItems.toList();
-
-    if (paths.isEmpty) {
-      if (panelState.focusedIndex >= 0 &&
-          panelState.focusedIndex < panelState.items.length) {
-        final item = panelState.items[panelState.focusedIndex];
-        if (!item.isParentDetails) {
-          paths.add(item.path);
-        }
-      }
-    }
-
-    if (paths.isNotEmpty) {
-      await SystemClipboard.setFilePaths(paths, operation);
-
-      if (operation == ClipboardOperation.cut) {
-        ref
-            .read(internalClipboardProvider.notifier)
-            .setCutPaths(paths, panelState.currentPath);
-      } else {
-        ref.read(internalClipboardProvider.notifier).clearCutPaths();
-      }
-    }
-  }
-
   void _copyPathToClipboard(WidgetRef ref, String activeTabId) {
     final panelState = ref.read(panelStateProvider(activeTabId));
     String? targetPath;
@@ -417,198 +387,6 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
       Clipboard.setData(ClipboardData(text: targetPath));
       ref.read(overlayProvider.notifier).showToast('Path copied: $targetPath');
     }
-  }
-
-  Future<void> _pasteFromClipboard(WidgetRef ref, String activeTabId) async {
-    final clipboardData = await SystemClipboard.getFilePaths();
-    final destPath = ref.read(panelStateProvider(activeTabId)).currentPath;
-
-    if (destPath.isEmpty) return;
-
-    final internalClipboard = ref.read(internalClipboardProvider);
-    final repository = ref.read(fileSystemRepositoryProvider);
-
-    // Check if we have internal cut paths that match the clipboard
-    bool isInternalCut = false;
-    List<String> paths;
-
-    if (clipboardData != null) {
-      paths = clipboardData.$1;
-
-      // Check if clipboard matches our internal cut state
-      if (internalClipboard.cutPaths.isNotEmpty &&
-          paths.length == internalClipboard.cutPaths.length &&
-          internalClipboard.cutSourcePath != null &&
-          paths.every((p) => internalClipboard.cutPaths.contains(p))) {
-        isInternalCut = true;
-      }
-    } else if (internalClipboard.cutPaths.isNotEmpty) {
-      // No clipboard data but we have internal cut - use that
-      paths = internalClipboard.cutPaths;
-      isInternalCut = true;
-    } else {
-      return;
-    }
-
-    if (paths.isEmpty) return;
-
-    // Determine source path for comparison
-    String? sourcePath;
-    if (isInternalCut && internalClipboard.cutSourcePath != null) {
-      sourcePath = internalClipboard.cutSourcePath;
-    } else if (paths.isNotEmpty) {
-      // Get source directory from first path
-      final firstPath = paths.first;
-      final lastSlash = firstPath.lastIndexOf('/');
-      if (lastSlash > 0) {
-        sourcePath = firstPath.substring(0, lastSlash);
-      }
-    }
-
-    // Check if pasting to same location - need to handle specially
-    bool isSameLocation = sourcePath != null && sourcePath == destPath;
-
-    if (isInternalCut) {
-      // Move operation (cut + paste)
-      List<String> finalPaths = paths;
-
-      // If moving to same location, no need to rename, just refresh
-      if (!isSameLocation) {
-        final stream = repository.moveItems(
-          finalPaths,
-          destPath,
-          CancellationToken(),
-        );
-        await for (final _ in stream) {
-          // Wait for completion
-        }
-      }
-
-      // Clear clipboard and internal state
-      ref.read(internalClipboardProvider.notifier).clearCutPaths();
-
-      // Refresh both tabs
-      final sourcePanelId = ref
-          .read(focusProvider.notifier)
-          .getInactivePanelId();
-      final sourceTabId = ref
-          .read(panelTabsProvider(sourcePanelId))
-          .activeTabId;
-
-      // Compute which item to focus in the source tab after the move.
-      // The panel state is still unmodified in Riverpod at this point.
-      final sourcePanelState = ref.read(panelStateProvider(sourceTabId));
-      String? sourceSelectPath;
-      final remaining = sourcePanelState.items
-          .where((item) => !finalPaths.contains(item.path))
-          .toList();
-      if (remaining.isNotEmpty) {
-        final focusedIdx = sourcePanelState.focusedIndex;
-        if (focusedIdx >= 0 &&
-            focusedIdx < sourcePanelState.items.length &&
-            !finalPaths.contains(sourcePanelState.items[focusedIdx].path)) {
-          // Focused item wasn't moved → keep it.
-          sourceSelectPath = sourcePanelState.items[focusedIdx].path;
-        } else {
-          // Focused item moved → slide to the next item (or last if at end).
-          final targetIdx = focusedIdx.clamp(0, remaining.length - 1);
-          sourceSelectPath = remaining[targetIdx].path;
-        }
-      }
-
-      ref
-          .read(panelStateProvider(sourceTabId).notifier)
-          .loadPath(sourcePath!, selectItemPath: sourceSelectPath);
-      ref
-          .read(panelStateProvider(activeTabId).notifier)
-          .loadPath(destPath, preserveFocusedIndex: true);
-      return;
-    } else {
-      // Copy operation
-      if (isSameLocation) {
-        // Generate new names and copy with new names
-        final newPaths = _generateCopyNames(paths, destPath);
-
-        for (int i = 0; i < paths.length; i++) {
-          final sourceFile = paths[i];
-          final destFile = newPaths[i];
-          await repository.copyItem(sourceFile, destFile);
-        }
-
-        // Select the first copied file
-        final copiedFileName = newPaths.isNotEmpty
-            ? newPaths.first.split('/').last
-            : null;
-        final destSelectPath = copiedFileName != null
-            ? '$destPath/$copiedFileName'
-            : null;
-        ref
-            .read(panelStateProvider(activeTabId).notifier)
-            .loadPath(destPath, selectItemPath: destSelectPath);
-      } else {
-        final stream = repository.copyItems(
-          paths,
-          destPath,
-          CancellationToken(),
-        );
-        await for (final _ in stream) {
-          // Wait for completion
-        }
-
-        // Select the first copied file in destination
-        final copiedFileName = paths.isNotEmpty
-            ? paths.first.split('/').last
-            : null;
-        final destSelectPath = copiedFileName != null
-            ? '$destPath/$copiedFileName'
-            : null;
-        ref
-            .read(panelStateProvider(activeTabId).notifier)
-            .loadPath(destPath, selectItemPath: destSelectPath);
-      }
-      return;
-    }
-  }
-
-  List<String> _generateCopyNames(List<String> paths, String destPath) {
-    final result = <String>[];
-
-    for (final originalPath in paths) {
-      final fileName = originalPath.split('/').last;
-      final dotIndex = fileName.lastIndexOf('.');
-
-      String baseName;
-      String extension;
-
-      if (dotIndex > 0) {
-        baseName = fileName.substring(0, dotIndex);
-        extension = fileName.substring(dotIndex);
-      } else {
-        baseName = fileName;
-        extension = '';
-      }
-
-      String newName = '$baseName (copy)$extension';
-      String newPath = '$destPath/$newName';
-
-      // Check if file already exists and increment if needed
-      int counter = 1;
-      while (_fileExists(newPath)) {
-        newName = '$baseName ($counter copy)$extension';
-        newPath = '$destPath/$newName';
-        counter++;
-      }
-
-      result.add(newPath);
-    }
-
-    return result;
-  }
-
-  bool _fileExists(String path) {
-    final file = File(path);
-    final dir = Directory(path);
-    return file.existsSync() || dir.existsSync();
   }
 
   KeyEventResult? _handleCustomShortcut(
@@ -656,13 +434,17 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         panelController.deselectAll();
         return KeyEventResult.handled;
       case 'copyToClipboard':
-        _copyToClipboard(ref, activeTabId, ClipboardOperation.copy);
+        ref
+            .read(clipboardActionsProvider)
+            .copyOrCut(activeTabId, ClipboardOperation.copy);
         return KeyEventResult.handled;
       case 'cutToClipboard':
-        _copyToClipboard(ref, activeTabId, ClipboardOperation.cut);
+        ref
+            .read(clipboardActionsProvider)
+            .copyOrCut(activeTabId, ClipboardOperation.cut);
         return KeyEventResult.handled;
       case 'pasteFromClipboard':
-        _pasteFromClipboard(ref, activeTabId);
+        ref.read(clipboardActionsProvider).paste(activeTabId);
         return KeyEventResult.handled;
       case 'switchPanel':
         ref.read(focusProvider.notifier).switchPanel();
@@ -826,6 +608,9 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
       case 'filePreview':
         _showFilePreviewDialog(context, ref, activeTabId);
         return KeyEventResult.handled;
+      case 'showInfo':
+        _showInfoDialog(context, ref, activeTabId);
+        return KeyEventResult.handled;
       default:
         return null;
     }
@@ -873,6 +658,38 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
       if (!item.isDirectory && !item.isParentDetails) {
         showFilePreviewDialog(context, item);
       }
+    }
+  }
+
+  void _showInfoDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String activeTabId,
+  ) {
+    final panelState = ref.read(panelStateProvider(activeTabId));
+    List<FileSystemItem> targetItems = panelState.items
+        .where(
+          (item) =>
+              panelState.selectedItems.contains(item.path) &&
+              !item.isParentDetails,
+        )
+        .toList();
+
+    if (targetItems.isEmpty &&
+        panelState.focusedIndex >= 0 &&
+        panelState.focusedIndex < panelState.items.length) {
+      final focused = panelState.items[panelState.focusedIndex];
+      if (!focused.isParentDetails) {
+        targetItems = [focused];
+      }
+    }
+
+    if (targetItems.isNotEmpty) {
+      showItemInfoDialog(
+        context,
+        items: targetItems,
+        currentPath: panelState.currentPath,
+      );
     }
   }
 

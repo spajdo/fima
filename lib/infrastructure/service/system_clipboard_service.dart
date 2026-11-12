@@ -20,7 +20,11 @@ class SystemClipboard {
   }
 
   static Future<bool> hasFilePaths() async {
-    final files = await Pasteboard.files();
-    return files.isNotEmpty;
+    try {
+      final files = await Pasteboard.files();
+      return files.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 }

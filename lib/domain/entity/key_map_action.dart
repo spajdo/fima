@@ -406,6 +406,14 @@ class KeyMapActionDefs {
       omniPanelOrder: 28,
     ),
     KeyMapAction(
+      id: 'showInfo',
+      label: 'Info',
+      defaultShortcutLinux: 'Ctrl+I',
+      defaultShortcutMacOS: '⌘ + I',
+      showInOmniPanel: true,
+      omniPanelOrder: 33,
+    ),
+    KeyMapAction(
       id: 'globalToggleWindow',
       label: 'Toggle Window (Global)',
       defaultShortcutLinux: 'Ctrl + Alt + F1',

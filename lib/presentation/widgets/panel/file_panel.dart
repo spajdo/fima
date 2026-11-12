@@ -16,6 +16,7 @@ import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
 import 'package:fima/presentation/widgets/panel/draggable_file_item.dart';
 import 'package:fima/presentation/widgets/panel/drop_target_item.dart';
+import 'package:fima/presentation/widgets/panel/file_context_menu.dart';
 import 'package:fima/presentation/widgets/panel/panel_tab_bar.dart';
 import 'package:fima/presentation/widgets/panel/rename_field.dart';
 import 'package:flutter/gestures.dart';
@@ -144,6 +145,68 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     }
 
     _lastTapTime = now;
+  }
+
+  void _activateThisPanel() {
+    _panelFocusNode.requestFocus();
+    ref
+        .read(focusProvider.notifier)
+        .setActivePanel(
+          widget.panelId == 'left' ? ActivePanel.left : ActivePanel.right,
+        );
+  }
+
+  Future<void> _handleItemContextMenu(
+    Offset globalPosition,
+    int index,
+    FileSystemItem item,
+    String tabId,
+    PanelController controller,
+  ) async {
+    _activateThisPanel();
+
+    final currentState = ref.read(panelStateProvider(tabId));
+    if (!item.isParentDetails) {
+      if (!currentState.selectedItems.contains(item.path) &&
+          currentState.selectedItems.isNotEmpty) {
+        controller.deselectAll();
+      }
+      controller.setFocusedIndex(index);
+    }
+
+    final updatedState = ref.read(panelStateProvider(tabId));
+    await FileContextMenu.show(
+      context: context,
+      ref: ref,
+      globalPosition: globalPosition,
+      panelId: widget.panelId,
+      tabId: tabId,
+      panelState: updatedState,
+      controller: controller,
+      clickedItem: item,
+    );
+  }
+
+  Future<void> _handleBackgroundContextMenu(
+    Offset globalPosition,
+    String tabId,
+    PanelController controller,
+  ) async {
+    _activateThisPanel();
+
+    final updatedState = ref.read(panelStateProvider(tabId));
+    if (updatedState.currentPath.isEmpty) return;
+
+    await FileContextMenu.show(
+      context: context,
+      ref: ref,
+      globalPosition: globalPosition,
+      panelId: widget.panelId,
+      tabId: tabId,
+      panelState: updatedState,
+      controller: controller,
+      clickedItem: null,
+    );
   }
 
   void _scrollToIndex(int index, int itemCount, double itemHeight) {
@@ -884,6 +947,13 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                                   : ActivePanel.right,
                             );
                       },
+                      onSecondaryTapUp: (details) {
+                        _handleBackgroundContextMenu(
+                          details.globalPosition,
+                          activeTabId,
+                          controller,
+                        );
+                      },
                       child: ListView.builder(
                         controller: _scrollController,
                         itemExtent: itemHeight,
@@ -912,12 +982,22 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                               : fimaTheme.textColor;
 
                           Widget itemRow = GestureDetector(
+                            behavior: HitTestBehavior.opaque,
                             onTapDown: (_) {
                               _handleTapDown(
                                 index,
                                 item,
                                 controller,
                                 panelState.focusedIndex,
+                              );
+                            },
+                            onSecondaryTapUp: (details) {
+                              _handleItemContextMenu(
+                                details.globalPosition,
+                                index,
+                                item,
+                                activeTabId,
+                                controller,
                               );
                             },
                             child: Container(
