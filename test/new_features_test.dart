@@ -164,6 +164,61 @@ void main() {
       expect(find.text('+1'), findsOneWidget);
       expect(find.text('~1'), findsOneWidget);
     });
+
+    testWidgets(
+      'showFileDiffDialog fills main window and expands when window resizes',
+      (tester) async {
+        final tempDir = Directory.systemTemp.createTempSync('fima_diff_size_');
+        addTearDown(() => tempDir.deleteSync(recursive: true));
+
+        final fileA = File(p.join(tempDir.path, 'left.txt'))
+          ..writeAsStringSync('a\n');
+        final fileB = File(p.join(tempDir.path, 'right.txt'))
+          ..writeAsStringSync('b\n');
+
+        tester.view.physicalSize = const Size(1000, 700);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          ProviderScope(
+            child: MaterialApp(
+              home: Scaffold(
+                body: Builder(
+                  builder: (context) => ElevatedButton(
+                    onPressed: () => showFileDiffDialog(
+                      context,
+                      leftPath: fileA.path,
+                      rightPath: fileB.path,
+                    ),
+                    child: const Text('Open Diff'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('Open Diff'));
+        await tester.pump();
+        await tester.runAsync(() async {
+          for (int i = 0; i < 30; i++) {
+            await Future.delayed(const Duration(milliseconds: 25));
+            await tester.pump();
+            if (find.text('Compare Files').evaluate().isNotEmpty) break;
+          }
+        });
+        await tester.pump();
+
+        expect(tester.getSize(find.byType(Dialog)), const Size(1000, 700));
+
+        // Simulate maximizing / fullscreening the main window
+        tester.view.physicalSize = const Size(2560, 1440);
+        await tester.pumpAndSettle();
+
+        expect(tester.getSize(find.byType(Dialog)), const Size(2560, 1440));
+      },
+    );
   });
 
   group('Feature 5: Checksums in ItemInfoDialog', () {

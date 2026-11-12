@@ -153,9 +153,6 @@ class _FileDiffDialogState extends ConsumerState<FileDiffDialog> {
   @override
   Widget build(BuildContext context) {
     final fimaTheme = ref.watch(themeProvider);
-    final screenSize = MediaQuery.of(context).size;
-    final dialogWidth = (screenSize.width * 0.88).clamp(640.0, 1300.0);
-    final dialogHeight = (screenSize.height * 0.82).clamp(420.0, 900.0);
 
     final result = _result;
     final visibleRows = result != null && result.error == null
@@ -174,22 +171,11 @@ class _FileDiffDialogState extends ConsumerState<FileDiffDialog> {
       },
       child: Dialog(
         backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(20),
+        insetPadding: EdgeInsets.zero,
         child: Container(
-          width: dialogWidth,
-          height: dialogHeight,
-          decoration: BoxDecoration(
-            color: fimaTheme.backgroundColor,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: fimaTheme.borderColor),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 28,
-                offset: const Offset(0, 12),
-              ),
-            ],
-          ),
+          width: double.infinity,
+          height: double.infinity,
+          color: fimaTheme.backgroundColor,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -203,9 +189,6 @@ class _FileDiffDialogState extends ConsumerState<FileDiffDialog> {
                   color: fimaTheme.surfaceColor,
                   border: Border(
                     bottom: BorderSide(color: fimaTheme.borderColor),
-                  ),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(9),
                   ),
                 ),
                 child: Row(

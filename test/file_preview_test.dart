@@ -225,4 +225,80 @@ void main() {
       expect(translation.y, greaterThan(15.0));
     });
   });
+
+  group('Full-window sizing on preview dialogs', () {
+    testWidgets(
+      'FilePreviewDialog fills main window and expands when window resizes',
+      (tester) async {
+        final file = File(p.join(tempDir.path, 'note.txt'))
+          ..writeAsStringSync('hello\n');
+
+        tester.view.physicalSize = const Size(1000, 700);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => ElevatedButton(
+                  onPressed: () =>
+                      showFilePreviewDialog(context, _makeFileItem(file)),
+                  child: const Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('Open'));
+        await _pumpUntilLoaded(tester);
+
+        expect(tester.getSize(find.byType(Dialog)), const Size(1000, 700));
+
+        tester.view.physicalSize = const Size(2560, 1440);
+        await tester.pumpAndSettle();
+
+        expect(tester.getSize(find.byType(Dialog)), const Size(2560, 1440));
+      },
+    );
+
+    testWidgets(
+      'ImagePreviewDialog fills main window and expands when window resizes',
+      (tester) async {
+        final image = img.Image(width: 32, height: 32);
+        img.fill(image, color: img.ColorRgb8(10, 180, 240));
+        final pngFile = File(p.join(tempDir.path, 'pic.png'))
+          ..writeAsBytesSync(img.encodePng(image));
+
+        tester.view.physicalSize = const Size(1000, 700);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => ElevatedButton(
+                  onPressed: () =>
+                      showFilePreviewDialog(context, _makeFileItem(pngFile)),
+                  child: const Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('Open'));
+        await _pumpUntilLoaded(tester);
+
+        expect(tester.getSize(find.byType(Dialog)), const Size(1000, 700));
+
+        tester.view.physicalSize = const Size(2560, 1440);
+        await tester.pumpAndSettle();
+
+        expect(tester.getSize(find.byType(Dialog)), const Size(2560, 1440));
+      },
+    );
+  });
 }

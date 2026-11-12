@@ -755,5 +755,74 @@ void main() {
       expect(find.text('1 file, 0 folders'), findsOneWidget);
       expect(find.text('Uncompressed'), findsOneWidget);
     });
+
+    testWidgets(
+      'fits without scrolling in tall window and scrolls when window shrinks',
+      (tester) async {
+        final image = img.Image(width: 48, height: 32);
+        img.fill(image, color: img.ColorRgb8(10, 120, 220));
+        final pngFile = File(p.join(tempDir.path, 'tall_test.png'))
+          ..writeAsBytesSync(img.encodePng(image));
+        final stat = pngFile.statSync();
+
+        final item = FileSystemItem(
+          path: pngFile.path,
+          name: 'tall_test.png',
+          size: stat.size,
+          modified: stat.modified,
+          isDirectory: false,
+        );
+
+        tester.view.physicalSize = const Size(1280, 1100);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              fileSystemRepositoryProvider.overrideWithValue(
+                LocalFileSystemRepository(),
+              ),
+            ],
+            child: MaterialApp(
+              home: Scaffold(
+                body: Builder(
+                  builder: (context) => ElevatedButton(
+                    onPressed: () => showItemInfoDialog(
+                      context,
+                      items: [item],
+                      currentPath: tempDir.path,
+                    ),
+                    child: const Text('Open Info'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('Open Info'));
+        await _pumpDialogUntilText(tester, '48 × 32 px');
+
+        // Calculate checksums so content height exceeds old 680px cap.
+        await tester.tap(find.text('Calculate MD5 & SHA-256'));
+        await _pumpDialogUntilText(tester, 'Verify Hash');
+
+        final scrollView = tester.widget<SingleChildScrollView>(
+          find.byType(SingleChildScrollView),
+        );
+        expect(scrollView.controller!.position.maxScrollExtent, 0.0);
+        expect(tester.getSize(find.byType(Dialog)).height, greaterThan(680.0));
+
+        // Shrink the main window so the dialog no longer fits vertically.
+        tester.view.physicalSize = const Size(1280, 460);
+        await tester.pumpAndSettle();
+
+        expect(
+          scrollView.controller!.position.maxScrollExtent,
+          greaterThan(0.0),
+        );
+      },
+    );
   });
 }

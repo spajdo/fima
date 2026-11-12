@@ -354,10 +354,8 @@ class _ImagePreviewDialogState extends State<ImagePreviewDialog> {
 
     return Dialog(
       backgroundColor: const Color(0xFF1E1E1E),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: Color(0xFF333333)),
-      ),
+      insetPadding: EdgeInsets.zero,
+      shape: const RoundedRectangleBorder(),
       child: Focus(
         autofocus: true,
         onKeyEvent: (node, event) {
@@ -393,8 +391,8 @@ class _ImagePreviewDialogState extends State<ImagePreviewDialog> {
           return KeyEventResult.ignored;
         },
         child: Container(
-          width: MediaQuery.of(context).size.width * 0.92,
-          height: MediaQuery.of(context).size.height * 0.92,
+          width: double.infinity,
+          height: double.infinity,
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,

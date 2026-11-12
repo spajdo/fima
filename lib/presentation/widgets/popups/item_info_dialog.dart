@@ -51,6 +51,7 @@ class _ItemInfoDialogState extends ConsumerState<ItemInfoDialog> {
   bool _isCalculatingChecksums = false;
   String? _checksumError;
   late final TextEditingController _verifyHashController;
+  late final ScrollController _scrollController;
   String _verifyHashInput = '';
   bool _showPermissionsEditor = false;
 
@@ -58,6 +59,7 @@ class _ItemInfoDialogState extends ConsumerState<ItemInfoDialog> {
   void initState() {
     super.initState();
     _verifyHashController = TextEditingController();
+    _scrollController = ScrollController();
     _metadata = ItemMetadataService.buildInitialMetadata(
       items: widget.items,
       currentPath: widget.currentPath,
@@ -70,6 +72,7 @@ class _ItemInfoDialogState extends ConsumerState<ItemInfoDialog> {
     _statsHandle?.cancel();
     _checksumHandle?.cancel();
     _verifyHashController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -243,10 +246,9 @@ class _ItemInfoDialogState extends ConsumerState<ItemInfoDialog> {
       },
       child: Dialog(
         backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Container(
-          width: 520,
-          constraints: const BoxConstraints(maxHeight: 680),
+          width: 580,
           decoration: BoxDecoration(
             color: fimaTheme.backgroundColor,
             borderRadius: BorderRadius.circular(10),
@@ -316,243 +318,248 @@ class _ItemInfoDialogState extends ConsumerState<ItemInfoDialog> {
 
               // Body
               Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Hero summary row
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: 44,
-                            height: 44,
-                            child: Center(child: _buildHeaderIcon(fimaTheme)),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                SelectableText(
-                                  meta.name,
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: fimaTheme.textColor,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  meta.kind,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: fimaTheme.secondaryTextColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // General section
-                      _SectionCard(
-                        title: 'GENERAL',
-                        theme: fimaTheme,
-                        children: [
-                          _InfoRow(
-                            label: 'Kind',
-                            value: meta.kind,
-                            theme: fimaTheme,
-                          ),
-                          _buildSizeRow(meta, fimaTheme),
-                          if (meta.fileCount != null ||
-                              meta.folderCount != null ||
-                              meta.isDirectory ||
-                              meta.isZipArchive ||
-                              meta.isMultiSelection)
-                            _buildContainsRow(meta, fimaTheme),
-                          if (meta.isZipArchive &&
-                              meta.zipUncompressedSize != null)
-                            _InfoRow(
-                              label: 'Uncompressed',
-                              value:
-                                  '${_formatBytesWithExact(meta.zipUncompressedSize!)} '
-                                  '(${_formatCompressionRatio(meta.sizeBytes, meta.zipUncompressedSize!)})',
-                              theme: fimaTheme,
-                            ),
-                          if (meta.imageDimensions != null)
-                            _InfoRow(
-                              label: 'Dimensions',
-                              value:
-                                  '${meta.imageDimensions!.$1} × ${meta.imageDimensions!.$2} px',
-                              theme: fimaTheme,
-                            ),
-                          _InfoRow(
-                            label: 'Location',
-                            value: meta.parentPath,
-                            theme: fimaTheme,
-                          ),
-                          if (!meta.isMultiSelection)
-                            _InfoRow(
-                              label: 'Path',
-                              value: meta.path,
-                              theme: fimaTheme,
-                            ),
-                          if (meta.symlinkTarget != null)
-                            _InfoRow(
-                              label: 'Target',
-                              value: meta.symlinkTarget!,
-                              theme: fimaTheme,
-                            ),
-                        ],
-                      ),
-
-                      if (hasDates) ...[
-                        const SizedBox(height: 12),
-                        _SectionCard(
-                          title: 'TIMESTAMPS',
-                          theme: fimaTheme,
+                child: Scrollbar(
+                  controller: _scrollController,
+                  child: SingleChildScrollView(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Hero summary row
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            if (meta.modified != null)
-                              _InfoRow(
-                                label: 'Modified',
-                                value: _dateTimeFormat.format(meta.modified!),
-                                theme: fimaTheme,
-                              ),
-                            if (meta.accessed != null)
-                              _InfoRow(
-                                label: 'Accessed',
-                                value: _dateTimeFormat.format(meta.accessed!),
-                                theme: fimaTheme,
-                              ),
-                            if (meta.changed != null)
-                              _InfoRow(
-                                label: 'Changed',
-                                value: _dateTimeFormat.format(meta.changed!),
-                                theme: fimaTheme,
-                              ),
-                          ],
-                        ),
-                      ],
-
-                      if (!meta.isMultiSelection &&
-                          !meta.isDirectory &&
-                          !meta.isRemote &&
-                          !meta.isInsideZip) ...[
-                        const SizedBox(height: 12),
-                        _buildChecksumsSection(fimaTheme),
-                      ],
-
-                      if (hasPermissionsOrOwner) ...[
-                        const SizedBox(height: 12),
-                        _SectionCard(
-                          title: 'PERMISSIONS & ATTRIBUTES',
-                          theme: fimaTheme,
-                          children: [
-                            if (meta.permissions != null)
-                              _InfoRowWidget(
-                                label: 'Permissions',
-                                theme: fimaTheme,
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: SelectableText(
-                                        meta.permissions!,
-                                        style: TextStyle(
-                                          fontSize: 12.5,
-                                          fontFamily: 'monospace',
-                                          color: fimaTheme.textColor,
-                                        ),
-                                      ),
+                            SizedBox(
+                              width: 44,
+                              height: 44,
+                              child: Center(child: _buildHeaderIcon(fimaTheme)),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SelectableText(
+                                    meta.name,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: fimaTheme.textColor,
                                     ),
-                                    if (meta.canEditPermissions &&
-                                        meta.modeBits != null)
-                                      TextButton(
-                                        onPressed: () {
-                                          setState(() {
-                                            _showPermissionsEditor =
-                                                !_showPermissionsEditor;
-                                          });
-                                        },
-                                        style: TextButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 2,
-                                          ),
-                                          minimumSize: Size.zero,
-                                          tapTargetSize:
-                                              MaterialTapTargetSize.shrinkWrap,
-                                        ),
-                                        child: Text(
-                                          _showPermissionsEditor
-                                              ? 'Hide Editor'
-                                              : 'Edit...',
-                                          style: TextStyle(
-                                            fontSize: 11.5,
-                                            color: fimaTheme.accentColor,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            if (_showPermissionsEditor &&
-                                meta.canEditPermissions &&
-                                meta.modeBits != null) ...[
-                              const SizedBox(height: 8),
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: fimaTheme.backgroundColor,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: fimaTheme.borderColor,
                                   ),
-                                ),
-                                child: PosixPermissionsEditor(
-                                  itemPath: meta.path,
-                                  initialModeBits: meta.modeBits!,
-                                  onApplied: (newBits) {
-                                    setState(() {
-                                      _metadata = _metadata.copyWith(
-                                        modeBits: newBits,
-                                        permissions:
-                                            ItemMetadataService.formatPermissionsFromBits(
-                                              newBits,
-                                            ),
-                                        isReadOnly: (newBits & 0x92) == 0,
-                                      );
-                                    });
-                                    ref
-                                        .read(overlayProvider.notifier)
-                                        .showToast(
-                                          'Permissions updated: ${ItemMetadataService.formatPermissionsFromBits(newBits)}',
-                                        );
-                                  },
-                                ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    meta.kind,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: fimaTheme.secondaryTextColor,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 6),
-                            ],
-                            if (meta.ownerUid != null || meta.ownerGid != null)
-                              _InfoRow(
-                                label: 'Owner',
-                                value:
-                                    'UID ${meta.ownerUid ?? '-'} / GID ${meta.ownerGid ?? '-'}',
-                                theme: fimaTheme,
-                              ),
-                            _InfoRow(
-                              label: 'Attributes',
-                              value: attributes.join(' · '),
-                              theme: fimaTheme,
                             ),
                           ],
                         ),
+                        const SizedBox(height: 16),
+
+                        // General section
+                        _SectionCard(
+                          title: 'GENERAL',
+                          theme: fimaTheme,
+                          children: [
+                            _InfoRow(
+                              label: 'Kind',
+                              value: meta.kind,
+                              theme: fimaTheme,
+                            ),
+                            _buildSizeRow(meta, fimaTheme),
+                            if (meta.fileCount != null ||
+                                meta.folderCount != null ||
+                                meta.isDirectory ||
+                                meta.isZipArchive ||
+                                meta.isMultiSelection)
+                              _buildContainsRow(meta, fimaTheme),
+                            if (meta.isZipArchive &&
+                                meta.zipUncompressedSize != null)
+                              _InfoRow(
+                                label: 'Uncompressed',
+                                value:
+                                    '${_formatBytesWithExact(meta.zipUncompressedSize!)} '
+                                    '(${_formatCompressionRatio(meta.sizeBytes, meta.zipUncompressedSize!)})',
+                                theme: fimaTheme,
+                              ),
+                            if (meta.imageDimensions != null)
+                              _InfoRow(
+                                label: 'Dimensions',
+                                value:
+                                    '${meta.imageDimensions!.$1} × ${meta.imageDimensions!.$2} px',
+                                theme: fimaTheme,
+                              ),
+                            _InfoRow(
+                              label: 'Location',
+                              value: meta.parentPath,
+                              theme: fimaTheme,
+                            ),
+                            if (!meta.isMultiSelection)
+                              _InfoRow(
+                                label: 'Path',
+                                value: meta.path,
+                                theme: fimaTheme,
+                              ),
+                            if (meta.symlinkTarget != null)
+                              _InfoRow(
+                                label: 'Target',
+                                value: meta.symlinkTarget!,
+                                theme: fimaTheme,
+                              ),
+                          ],
+                        ),
+
+                        if (hasDates) ...[
+                          const SizedBox(height: 12),
+                          _SectionCard(
+                            title: 'TIMESTAMPS',
+                            theme: fimaTheme,
+                            children: [
+                              if (meta.modified != null)
+                                _InfoRow(
+                                  label: 'Modified',
+                                  value: _dateTimeFormat.format(meta.modified!),
+                                  theme: fimaTheme,
+                                ),
+                              if (meta.accessed != null)
+                                _InfoRow(
+                                  label: 'Accessed',
+                                  value: _dateTimeFormat.format(meta.accessed!),
+                                  theme: fimaTheme,
+                                ),
+                              if (meta.changed != null)
+                                _InfoRow(
+                                  label: 'Changed',
+                                  value: _dateTimeFormat.format(meta.changed!),
+                                  theme: fimaTheme,
+                                ),
+                            ],
+                          ),
+                        ],
+
+                        if (!meta.isMultiSelection &&
+                            !meta.isDirectory &&
+                            !meta.isRemote &&
+                            !meta.isInsideZip) ...[
+                          const SizedBox(height: 12),
+                          _buildChecksumsSection(fimaTheme),
+                        ],
+
+                        if (hasPermissionsOrOwner) ...[
+                          const SizedBox(height: 12),
+                          _SectionCard(
+                            title: 'PERMISSIONS & ATTRIBUTES',
+                            theme: fimaTheme,
+                            children: [
+                              if (meta.permissions != null)
+                                _InfoRowWidget(
+                                  label: 'Permissions',
+                                  theme: fimaTheme,
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: SelectableText(
+                                          meta.permissions!,
+                                          style: TextStyle(
+                                            fontSize: 12.5,
+                                            fontFamily: 'monospace',
+                                            color: fimaTheme.textColor,
+                                          ),
+                                        ),
+                                      ),
+                                      if (meta.canEditPermissions &&
+                                          meta.modeBits != null)
+                                        TextButton(
+                                          onPressed: () {
+                                            setState(() {
+                                              _showPermissionsEditor =
+                                                  !_showPermissionsEditor;
+                                            });
+                                          },
+                                          style: TextButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            minimumSize: Size.zero,
+                                            tapTargetSize: MaterialTapTargetSize
+                                                .shrinkWrap,
+                                          ),
+                                          child: Text(
+                                            _showPermissionsEditor
+                                                ? 'Hide Editor'
+                                                : 'Edit...',
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              color: fimaTheme.accentColor,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              if (_showPermissionsEditor &&
+                                  meta.canEditPermissions &&
+                                  meta.modeBits != null) ...[
+                                const SizedBox(height: 8),
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: fimaTheme.backgroundColor,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: fimaTheme.borderColor,
+                                    ),
+                                  ),
+                                  child: PosixPermissionsEditor(
+                                    itemPath: meta.path,
+                                    initialModeBits: meta.modeBits!,
+                                    onApplied: (newBits) {
+                                      setState(() {
+                                        _metadata = _metadata.copyWith(
+                                          modeBits: newBits,
+                                          permissions:
+                                              ItemMetadataService.formatPermissionsFromBits(
+                                                newBits,
+                                              ),
+                                          isReadOnly: (newBits & 0x92) == 0,
+                                        );
+                                      });
+                                      ref
+                                          .read(overlayProvider.notifier)
+                                          .showToast(
+                                            'Permissions updated: ${ItemMetadataService.formatPermissionsFromBits(newBits)}',
+                                          );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                              ],
+                              if (meta.ownerUid != null ||
+                                  meta.ownerGid != null)
+                                _InfoRow(
+                                  label: 'Owner',
+                                  value:
+                                      'UID ${meta.ownerUid ?? '-'} / GID ${meta.ownerGid ?? '-'}',
+                                  theme: fimaTheme,
+                                ),
+                              _InfoRow(
+                                label: 'Attributes',
+                                value: attributes.join(' · '),
+                                theme: fimaTheme,
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
