@@ -8,12 +8,14 @@ class PanelOverlayState {
   final OverlayType type;
   final bool isLeftPanel;
   final String? toastMessage;
+  final bool isToastError;
   final String? terminalPath;
 
   const PanelOverlayState({
     this.type = OverlayType.none,
     this.isLeftPanel = true,
     this.toastMessage,
+    this.isToastError = false,
     this.terminalPath,
   });
 
@@ -21,6 +23,7 @@ class PanelOverlayState {
     OverlayType? type,
     bool? isLeftPanel,
     String? toastMessage,
+    bool? isToastError,
     bool clearToast = false,
     String? terminalPath,
   }) {
@@ -28,6 +31,7 @@ class PanelOverlayState {
       type: type ?? this.type,
       isLeftPanel: isLeftPanel ?? this.isLeftPanel,
       toastMessage: clearToast ? null : (toastMessage ?? this.toastMessage),
+      isToastError: clearToast ? false : (isToastError ?? this.isToastError),
       terminalPath: terminalPath ?? this.terminalPath,
     );
   }
@@ -53,9 +57,9 @@ class OverlayController extends StateNotifier<PanelOverlayState> {
     );
   }
 
-  void showToast(String message) {
-    state = state.copyWith(toastMessage: message);
-    Future.delayed(const Duration(seconds: 2), () {
+  void showToast(String message, {bool isError = false}) {
+    state = state.copyWith(toastMessage: message, isToastError: isError);
+    Future.delayed(Duration(seconds: isError ? 3 : 2), () {
       if (state.toastMessage == message) {
         state = state.copyWith(clearToast: true);
       }

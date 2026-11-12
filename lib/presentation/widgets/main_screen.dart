@@ -138,7 +138,11 @@ class _MainScreenState extends ConsumerState<MainScreen> {
                 ),
                 const BottomStatusBar(),
                 if (overlayState.toastMessage != null)
-                  _buildToast(overlayState.toastMessage!, fimaTheme),
+                  _buildToast(
+                    overlayState.toastMessage!,
+                    fimaTheme,
+                    isError: overlayState.isToastError,
+                  ),
               ],
             ),
     );
@@ -204,16 +208,32 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     );
   }
 
-  Widget _buildToast(String message, dynamic fimaTheme) {
+  Widget _buildToast(
+    String message,
+    dynamic fimaTheme, {
+    bool isError = false,
+  }) {
+    final color = isError ? Colors.redAccent : fimaTheme.textColor;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       color: fimaTheme.surfaceColor,
-      child: Text(
-        message,
-        style: TextStyle(fontSize: 12, color: fimaTheme.textColor),
-        overflow: TextOverflow.ellipsis,
-        maxLines: 1,
+      child: Row(
+        children: [
+          if (isError) ...[
+            Icon(Icons.error_outline, size: 15, color: color),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(fontSize: 12, color: color),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ),
+        ],
       ),
     );
   }
