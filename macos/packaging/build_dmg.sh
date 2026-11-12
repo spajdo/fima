@@ -50,7 +50,7 @@ create-dmg \
   "${STAGING_DIR}/"
 
 if [[ "$(basename "${DMG_OUTPUT}")" != "fima.dmg" ]]; then
-  ln -sf "$(basename "${DMG_OUTPUT}")" "${ROOT_DIR}/fima.dmg"
+  cp -f "${DMG_OUTPUT}" "${ROOT_DIR}/fima.dmg"
 fi
 
 echo "Successfully created clean DMG: ${DMG_OUTPUT}"
