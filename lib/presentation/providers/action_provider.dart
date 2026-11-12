@@ -279,6 +279,7 @@ class ActionGenerator {
   }
 
   void _navigateToTrash(String activePanelId, dynamic panelController) async {
+    final overlayNotifier = ref.read(overlayProvider.notifier);
     String? systemTrashPath;
 
     if (Platform.isMacOS) {
@@ -311,9 +312,7 @@ class ActionGenerator {
         }
         panelController.loadPath(fallbackTrash);
       } catch (e) {
-        ref
-            .read(overlayProvider.notifier)
-            .showToast('Could not locate Trash folder');
+        overlayNotifier.showToast('Could not locate Trash folder');
       }
     }
   }
@@ -512,6 +511,9 @@ class ActionGenerator {
   void _showSaveWorkspaceDialog() {
     final leftState = ref.read(panelStateProvider('left'));
     final rightState = ref.read(panelStateProvider('right'));
+    // Capture the notifier before opening the dialog, as the caller's WidgetRef
+    // (e.g. OmniDialog) may be disposed before the user submits the dialog.
+    final settingsNotifier = ref.read(userSettingsProvider.notifier);
 
     showDialog(
       context: context,
@@ -528,7 +530,7 @@ class ActionGenerator {
           leftPanelPath: leftState.currentPath,
           rightPanelPath: rightState.currentPath,
         );
-        ref.read(userSettingsProvider.notifier).addWorkspace(workspace);
+        settingsNotifier.addWorkspace(workspace);
       }
     });
   }
