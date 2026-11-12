@@ -1,5 +1,13 @@
 #define MyAppName "Fima"
-#define MyAppVersion "1.0.0"
+
+#ifndef MyAppVersion
+  #define MyAppVersion "0.0.0"
+#endif
+
+#ifndef MyOutputBaseFilename
+  #define MyOutputBaseFilename "fima-" + MyAppVersion + "-setup"
+#endif
+
 #define MyAppPublisher "sk.spajdo.fima"
 #define MyAppURL "https://github.com/spajdo/fima"
 #define MyAppExeName "fima.exe"
@@ -16,7 +24,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=dist\windows
-OutputBaseFilename=fima-setup
+OutputBaseFilename={#MyOutputBaseFilename}
 SetupIconFile=runner\resources\app_icon.ico
 Compression=lzma
 SolidCompression=yes

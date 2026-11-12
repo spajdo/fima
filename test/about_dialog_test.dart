@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -41,9 +43,11 @@ void main() {
       await tester.tap(find.widgetWithText(OutlinedButton, 'About fima'));
       await tester.pumpAndSettle();
 
+      final currentVersion = await AppVersion.load();
+
       expect(find.byType(FimaAboutDialog), findsOneWidget);
-      expect(find.text('Version 1.0.0 (1)'), findsOneWidget);
-      expect(find.text('1.0.0 (1)'), findsOneWidget);
+      expect(find.text('Version ${currentVersion.formatted}'), findsOneWidget);
+      expect(find.text(currentVersion.formatted), findsOneWidget);
       expect(find.text('https://github.com/spajdo/fima'), findsOneWidget);
       expect(find.text('Open-Source Licenses'), findsOneWidget);
 
@@ -54,5 +58,46 @@ void main() {
       expect(find.byType(ShortcutsDialog), findsOneWidget);
     },
   );
-}
 
+  group('AppVersion', () {
+    test('parses version and build number from pubspec content', () {
+      const sample = '''
+name: fima
+description: Two panel file manager
+version: 2.3.4+42
+environment:
+  sdk: ^3.10.0
+''';
+      final version = AppVersion.parseFromPubspecYaml(sample);
+      expect(version, isNotNull);
+      expect(version!.buildName, '2.3.4');
+      expect(version.buildNumber, '42');
+      expect(version.formatted, '2.3.4 (42)');
+    });
+
+    test('parses version without build number from pubspec content', () {
+      const sample = '''
+name: fima
+version: 0.9.1
+''';
+      final version = AppVersion.parseFromPubspecYaml(sample);
+      expect(version, isNotNull);
+      expect(version!.buildName, '0.9.1');
+      expect(version.buildNumber, '');
+      expect(version.formatted, '0.9.1');
+    });
+
+    testWidgets(
+      'AppVersion.load dynamically reads current version from pubspec.yaml',
+      (tester) async {
+        final expected = AppVersion.parseFromPubspecYaml(
+          File('pubspec.yaml').readAsStringSync(),
+        );
+        final version = await AppVersion.load();
+        expect(version.buildName, expected?.buildName);
+        expect(version.buildNumber, expected?.buildNumber);
+        expect(version.buildName, isNotEmpty);
+      },
+    );
+  });
+}

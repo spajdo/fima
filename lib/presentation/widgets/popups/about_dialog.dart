@@ -12,8 +12,6 @@ import 'package:fima/domain/entity/app_theme.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
 
-const String _defaultBuildName = '1.0.0';
-const String _defaultBuildNumber = '1';
 const String _repositoryUrl = 'https://github.com/spajdo/fima';
 const String _issuesUrl = 'https://github.com/spajdo/fima/issues';
 
@@ -25,14 +23,103 @@ Future<void> showFimaAboutDialog(BuildContext context) {
   );
 }
 
-class _AppVersion {
+class AppVersion {
   final String buildName;
   final String buildNumber;
 
-  const _AppVersion({required this.buildName, required this.buildNumber});
+  const AppVersion({required this.buildName, required this.buildNumber});
 
-  String get formatted => '$buildName ($buildNumber)';
+  String get formatted =>
+      buildNumber.isNotEmpty ? '$buildName ($buildNumber)' : buildName;
+
+  static AppVersion? parseFromPubspecYaml(String content) {
+    final match = RegExp(
+      r'^version:\s*([^\s+]+)(?:\+([^\s]+))?',
+      multiLine: true,
+    ).firstMatch(content);
+    if (match == null) return null;
+    final name = match.group(1)?.trim() ?? '';
+    final number = match.group(2)?.trim() ?? '';
+    if (name.isEmpty) return null;
+    return AppVersion(buildName: name, buildNumber: number);
+  }
+
+  static Future<AppVersion> load() async {
+    // 1. Try loading from local pubspec.yaml file (development / tests)
+    try {
+      final file = File('pubspec.yaml');
+      if (file.existsSync()) {
+        final fileContent = file.readAsStringSync();
+        final parsed = parseFromPubspecYaml(fileContent);
+        if (parsed != null) return parsed;
+      }
+    } catch (_) {}
+
+    // 2. Try loading from bundled pubspec.yaml asset (production release)
+    try {
+      final assetContent = await rootBundle.loadString('pubspec.yaml');
+      final parsed = parseFromPubspecYaml(assetContent);
+      if (parsed != null) return parsed;
+    } catch (_) {}
+
+    // 3. Fallback to platform-specific metadata injected by Flutter build
+    final platformVersion = _readPlatformAppVersion();
+    if (platformVersion != null) return platformVersion;
+
+    return const AppVersion(buildName: 'Unknown', buildNumber: '');
+  }
+
+  static AppVersion? _readPlatformAppVersion() {
+    try {
+      if (Platform.isMacOS) {
+        final macosDir = p.dirname(Platform.resolvedExecutable);
+        final contentsDir = p.dirname(macosDir);
+        final plistFile = File(p.join(contentsDir, 'Info.plist'));
+        if (plistFile.existsSync()) {
+          final result = Process.runSync('plutil', [
+            '-convert',
+            'json',
+            '-o',
+            '-',
+            plistFile.path,
+          ]);
+          if (result.exitCode == 0) {
+            final decoded = jsonDecode(result.stdout as String);
+            if (decoded is Map<String, dynamic>) {
+              final name = decoded['CFBundleShortVersionString'] as String?;
+              final number = decoded['CFBundleVersion'] as String?;
+              if (name != null && name.isNotEmpty) {
+                return AppVersion(buildName: name, buildNumber: number ?? '');
+              }
+            }
+          }
+        }
+      }
+
+      if (Platform.isLinux || Platform.isWindows) {
+        final exeDir = p.dirname(Platform.resolvedExecutable);
+        final versionFile = File(
+          p.join(exeDir, 'data', 'flutter_assets', 'version.json'),
+        );
+        if (versionFile.existsSync()) {
+          final decoded = jsonDecode(versionFile.readAsStringSync());
+          if (decoded is Map<String, dynamic>) {
+            final name = decoded['version'] as String?;
+            final number = decoded['build_number']?.toString();
+            if (name != null && name.isNotEmpty) {
+              return AppVersion(buildName: name, buildNumber: number ?? '');
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
 }
+
+final appVersionProvider = FutureProvider<AppVersion>((ref) async {
+  return AppVersion.load();
+});
 
 class FimaAboutDialog extends ConsumerStatefulWidget {
   const FimaAboutDialog({super.key});
@@ -42,78 +129,18 @@ class FimaAboutDialog extends ConsumerStatefulWidget {
 }
 
 class _FimaAboutDialogState extends ConsumerState<FimaAboutDialog> {
-  _AppVersion _version = const _AppVersion(
-    buildName: _defaultBuildName,
-    buildNumber: _defaultBuildNumber,
-  );
+  AppVersion _version = const AppVersion(buildName: '...', buildNumber: '');
 
   @override
   void initState() {
     super.initState();
-    _loadVersion();
-  }
-
-  Future<void> _loadVersion() async {
-    final loaded = await _readPlatformAppVersion();
-    if (!mounted || loaded == null) return;
-    setState(() {
-      _version = loaded;
+    AppVersion.load().then((loaded) {
+      if (mounted) {
+        setState(() {
+          _version = loaded;
+        });
+      }
     });
-  }
-
-  Future<_AppVersion?> _readPlatformAppVersion() async {
-    try {
-      if (Platform.isMacOS) {
-        final macosDir = p.dirname(Platform.resolvedExecutable);
-        final contentsDir = p.dirname(macosDir);
-        final plistFile = File(p.join(contentsDir, 'Info.plist'));
-        if (!await plistFile.exists()) return null;
-
-        final result = await Process.run('plutil', [
-          '-convert',
-          'json',
-          '-o',
-          '-',
-          plistFile.path,
-        ]);
-        if (result.exitCode != 0) return null;
-
-        final decoded = jsonDecode(result.stdout as String);
-        if (decoded is! Map<String, dynamic>) return null;
-        final name = decoded['CFBundleShortVersionString'] as String?;
-        final number = decoded['CFBundleVersion'] as String?;
-        if (name == null || name.isEmpty) return null;
-        return _AppVersion(
-          buildName: name,
-          buildNumber: (number != null && number.isNotEmpty)
-              ? number
-              : _defaultBuildNumber,
-        );
-      }
-
-      if (Platform.isLinux || Platform.isWindows) {
-        final exeDir = p.dirname(Platform.resolvedExecutable);
-        final versionFile = File(
-          p.join(exeDir, 'data', 'flutter_assets', 'version.json'),
-        );
-        if (!await versionFile.exists()) return null;
-
-        final decoded = jsonDecode(await versionFile.readAsString());
-        if (decoded is! Map<String, dynamic>) return null;
-        final name = decoded['version'] as String?;
-        final number = decoded['build_number']?.toString();
-        if (name == null || name.isEmpty) return null;
-        return _AppVersion(
-          buildName: name,
-          buildNumber: (number != null && number.isNotEmpty)
-              ? number
-              : _defaultBuildNumber,
-        );
-      }
-    } catch (_) {
-      // Fallback to default build metadata when running in test or dev harness.
-    }
-    return null;
   }
 
   String _platformLabel() {
@@ -518,4 +545,3 @@ class _AboutInfoRow extends StatelessWidget {
     );
   }
 }
-
