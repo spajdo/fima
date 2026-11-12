@@ -43,7 +43,7 @@ dependencies:
   state_notifier: ^1.0.0
   open_file: ^4.0.0
   window_manager: ^0.5.0
-  hotkey_manager: ^0.3.0
+  hotkey_manager: ^0.2.3
   pasteboard: ^0.6.0
   file_picker: ^10.0.0
   archive: ^4.6.0
