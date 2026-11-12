@@ -2,17 +2,19 @@ import 'dart:async';
 
 import 'package:fima/domain/entity/app_theme.dart';
 import 'package:fima/domain/entity/file_system_item.dart';
+import 'package:fima/domain/entity/key_map_action.dart';
 import 'package:fima/domain/entity/panel_state.dart';
 import 'package:fima/domain/entity/remote_connection.dart';
+import 'package:fima/infrastructure/service/keyboard_utils.dart';
 import 'package:fima/presentation/providers/drag_state_provider.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
+import 'package:fima/presentation/providers/overlay_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
 import 'package:fima/presentation/widgets/panel/draggable_file_item.dart';
 import 'package:fima/presentation/widgets/panel/drop_target_item.dart';
-import 'package:fima/presentation/widgets/panel/path_editor_dialog.dart';
 import 'package:fima/presentation/widgets/panel/rename_field.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -42,6 +44,10 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   // leaves any other focused widget (e.g. the terminal's TerminalView)
   // and routes key events back to the KeyboardHandler ancestor.
   late final FocusNode _panelFocusNode;
+  late final TextEditingController _pathController;
+  late final FocusNode _pathFocusNode;
+  String? _pathError;
+  bool _isValidatingPath = false;
   bool _previousShowHiddenFiles = false;
 
   // Column width fractions (the third column gets the remainder).
@@ -61,6 +67,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   void initState() {
     super.initState();
     _panelFocusNode = FocusNode();
+    _pathController = TextEditingController();
+    _pathFocusNode = FocusNode(onKeyEvent: _handlePathKeyEvent);
+    _pathFocusNode.addListener(_onPathFocusChanged);
     // Initialize the panel with provided path or default (home)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Only initialize if initialPath is provided and not empty
@@ -77,6 +86,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
 
   @override
   void dispose() {
+    _pathFocusNode.removeListener(_onPathFocusChanged);
+    _pathFocusNode.dispose();
+    _pathController.dispose();
     _scrollController.dispose();
     _panelFocusNode.dispose();
     super.dispose();
@@ -325,18 +337,217 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     }
   }
 
-  void _showPathEditor(BuildContext context, String currentPath) {
-    final controller = ref.read(panelStateProvider(widget.panelId).notifier);
+  void _onPathFocusChanged() {
+    if (!_pathFocusNode.hasFocus) {
+      final panelState = ref.read(panelStateProvider(widget.panelId));
+      if (panelState.isEditingPath) {
+        _cancelPathEditing(restoreFocus: false);
+      }
+    }
+  }
 
-    showDialog(
-      context: context,
-      barrierColor: Colors.transparent,
-      builder: (context) => PathEditorDialog(
-        currentPath: currentPath,
-        onPathChanged: (newPath) {
-          controller.loadPath(newPath);
-        },
+  void _activatePathEditor(String currentPath) {
+    _pathController.text = currentPath;
+    if (_pathError != null) {
+      setState(() {
+        _pathError = null;
+      });
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!ref.read(panelStateProvider(widget.panelId)).isEditingPath) return;
+      _pathFocusNode.requestFocus();
+      _selectAllPathText();
+    });
+  }
+
+  void _selectAllPathText() {
+    _pathController.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _pathController.text.length,
+    );
+  }
+
+  KeyEventResult _handlePathKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent) {
+      if (event.logicalKey == LogicalKeyboardKey.escape) {
+        _cancelPathEditing(restoreFocus: true);
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.enter ||
+          event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+        _submitPath();
+        return KeyEventResult.handled;
+      }
+      final currentShortcut = KeyboardUtils.buildShortcutString(event);
+      if (currentShortcut.isNotEmpty) {
+        final editPathShortcut = ref
+            .read(userSettingsProvider.notifier)
+            .getEffectiveShortcut('editPath');
+        if (editPathShortcut != null &&
+            KeyMapActionDefs.shortcutsMatch(
+              editPathShortcut,
+              currentShortcut,
+            )) {
+          _selectAllPathText();
+          return KeyEventResult.handled;
+        }
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
+  Future<void> _submitPath() async {
+    if (_isValidatingPath) return;
+    _isValidatingPath = true;
+
+    final input = _pathController.text;
+    final controller = ref.read(panelStateProvider(widget.panelId).notifier);
+    final error = await controller.navigateToPath(input);
+
+    if (!mounted) return;
+    _isValidatingPath = false;
+
+    if (error == null) {
+      if (_pathError != null) {
+        setState(() {
+          _pathError = null;
+        });
+      }
+      _panelFocusNode.requestFocus();
+    } else {
+      setState(() {
+        _pathError = error;
+      });
+      ref.read(overlayProvider.notifier).showToast(error, isError: true);
+      if (ref.read(panelStateProvider(widget.panelId)).isEditingPath &&
+          !_pathFocusNode.hasFocus) {
+        _pathFocusNode.requestFocus();
+      }
+    }
+  }
+
+  void _cancelPathEditing({required bool restoreFocus}) {
+    final controller = ref.read(panelStateProvider(widget.panelId).notifier);
+    final panelState = ref.read(panelStateProvider(widget.panelId));
+    if (!panelState.isEditingPath) return;
+
+    _pathController.text = panelState.currentPath;
+    if (_pathError != null) {
+      setState(() {
+        _pathError = null;
+      });
+    }
+    controller.stopEditingPath();
+
+    if (restoreFocus) {
+      _panelFocusNode.requestFocus();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
+        final leftEditing = ref.read(panelStateProvider('left')).isEditingPath;
+        final rightEditing = ref
+            .read(panelStateProvider('right'))
+            .isEditingPath;
+        if (leftEditing || rightEditing) return;
+
+        final currentFocus = FocusManager.instance.primaryFocus;
+        if (currentFocus == null ||
+            currentFocus is FocusScopeNode ||
+            currentFocus == _pathFocusNode) {
+          ref.read(keyboardHandlerFocusNodeProvider).requestFocus();
+        }
+      });
+    }
+  }
+
+  Widget _buildLocalPathHeader(
+    PanelState panelState,
+    PanelController controller,
+    FimaTheme fimaTheme,
+    ThemeData theme,
+    double fontSize,
+  ) {
+    final textStyle = theme.textTheme.bodySmall?.copyWith(
+      fontSize: fontSize,
+      color: fimaTheme.textColor,
+    );
+    final borderColor = _pathError != null
+        ? Colors.redAccent
+        : panelState.isEditingPath
+        ? fimaTheme.accentColor
+        : fimaTheme.borderColor;
+
+    return Container(
+      constraints: BoxConstraints(minHeight: fontSize + 16),
+      alignment: Alignment.centerLeft,
+      decoration: BoxDecoration(
+        color: panelState.isEditingPath
+            ? fimaTheme.backgroundColor
+            : fimaTheme.surfaceColor,
+        border: Border(bottom: BorderSide(color: borderColor)),
       ),
+      child: panelState.isEditingPath
+          ? TextField(
+              controller: _pathController,
+              focusNode: _pathFocusNode,
+              cursorWidth: 1.0,
+              maxLines: 1,
+              style: textStyle,
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 6,
+                ),
+                isDense: true,
+              ),
+              onChanged: (_) {
+                if (_pathError != null) {
+                  setState(() {
+                    _pathError = null;
+                  });
+                }
+              },
+              onEditingComplete: () {},
+              onTapOutside: (_) => _cancelPathEditing(restoreFocus: false),
+            )
+          : MouseRegion(
+              cursor: SystemMouseCursors.text,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  ref
+                      .read(focusProvider.notifier)
+                      .setActivePanel(
+                        widget.panelId == 'left'
+                            ? ActivePanel.left
+                            : ActivePanel.right,
+                      );
+                  controller.startEditingPath();
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
+                  child: Text(
+                    panelState.currentPath.isEmpty
+                        ? '...'
+                        : panelState.currentPath,
+                    style: textStyle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ),
     );
   }
 
@@ -447,6 +658,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       if (previous?.focusedIndex != next.focusedIndex) {
         _scrollToIndex(next.focusedIndex, next.items.length, itemHeight);
       }
+      if (previous?.isEditingPath != true && next.isEditingPath) {
+        _activatePathEditor(next.currentPath);
+      }
     });
 
     return Listener(
@@ -490,46 +704,12 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                   _buildSshHeader(panelState, fimaTheme, theme, fontSize),
                 // Local path header
                 if (!panelState.currentPath.startsWith('ssh://'))
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    color: fimaTheme.surfaceColor,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: InkWell(
-                            onTap: () => _showPathEditor(
-                              context,
-                              panelState.currentPath,
-                            ),
-                            child: Text(
-                              panelState.currentPath.isEmpty
-                                  ? '...'
-                                  : panelState.currentPath,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                fontSize: fontSize,
-                                color: fimaTheme.textColor,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: Icon(
-                            Icons.edit,
-                            size: fontSize + 2,
-                            color: fimaTheme.textColor,
-                          ),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          tooltip: 'Edit path',
-                          onPressed: () =>
-                              _showPathEditor(context, panelState.currentPath),
-                        ),
-                      ],
-                    ),
+                  _buildLocalPathHeader(
+                    panelState,
+                    controller,
+                    fimaTheme,
+                    theme,
+                    fontSize,
                   ),
                 // Column headers
                 Container(

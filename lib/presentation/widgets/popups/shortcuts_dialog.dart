@@ -59,6 +59,7 @@ class _ShortcutsDialogState extends ConsumerState<ShortcutsDialog> {
         _ShortcutEntry('Enter Directory / Open File', s('enterDirectory')),
         _ShortcutEntry('Navigate to Parent', s('navigateParent')),
         _ShortcutEntry('Switch Panel', s('switchPanel')),
+        _ShortcutEntry('Edit Path', s('editPath')),
         _ShortcutEntry('Toggle Selection', s('toggleSelection')),
       ]),
       _ShortcutCategory('SEARCH & FILTER', [

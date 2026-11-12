@@ -255,6 +255,9 @@ class ActionGenerator {
           builder: (context) => const OmniDialog(initialText: 'r '),
         );
         break;
+      case 'editPath':
+        panelController.startEditingPath();
+        break;
       case 'saveWorkspace':
         _showSaveWorkspaceDialog();
         break;

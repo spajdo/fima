@@ -81,56 +81,129 @@ class PanelController extends StateNotifier<PanelState> {
         showHiddenFiles: settings.showHiddenFiles,
       );
 
-      final sortedItems = _sortItems(
+      _applyLoadedItems(
+        path,
         items,
-        state.sortColumn,
-        state.sortAscending,
+        addToVisited: addToVisited,
+        selectItemPath: selectItemPath,
+        preserveFocusedIndex: preserveFocusedIndex,
+        preserveSelection: preserveSelection,
       );
-
-      // Calculate new focused index
-      int newFocusedIndex;
-      if (preserveFocusedIndex &&
-          state.focusedIndex >= 0 &&
-          state.focusedIndex < state.items.length) {
-        // Find focused item by path, not by index
-        final focusedPath = state.items[state.focusedIndex].path;
-        newFocusedIndex = sortedItems.indexWhere(
-          (item) => item.path == focusedPath,
-        );
-        if (newFocusedIndex < 0) newFocusedIndex = 0;
-      } else {
-        newFocusedIndex = _getFocusedIndex(sortedItems, selectItemPath);
-      }
-
-      List<String> newVisitedPaths = List<String>.from(state.visitedPaths);
-      if (addToVisited && path.isNotEmpty) {
-        newVisitedPaths.add(path);
-      }
-
-      // Preserve selection by filtering selected paths that still exist
-      Set<String> selectedItemsToUse = preserveSelection
-          ? state.selectedItems
-                .where((p) => sortedItems.any((item) => item.path == p))
-                .toSet()
-          : <String>{};
-
-      state = state.copyWith(
-        currentPath: path,
-        items: sortedItems,
-        selectedItems: preserveSelection ? selectedItemsToUse : {},
-        focusedIndex: newFocusedIndex,
-        visitedPaths: newVisitedPaths,
-        quickFilterText: '',
-      );
-
-      _allItems = sortedItems;
-
-      _savePath(path);
-
-      _ref.read(userSettingsProvider.notifier).indexPath(path);
     } catch (e) {
       debugPrint('Error loading path $path: $e');
     }
+  }
+
+  /// Validates [rawPath] and navigates to it, returning an error message if
+  /// the directory does not exist or cannot be read, or `null` on success.
+  Future<String?> navigateToPath(String rawPath) async {
+    final trimmed = rawPath.trim();
+    if (trimmed.isEmpty) {
+      return 'Path cannot be empty';
+    }
+    if (trimmed.startsWith('ssh://')) {
+      return 'Directory does not exist: $trimmed';
+    }
+
+    String expanded = trimmed;
+    if (trimmed == '~' ||
+        trimmed.startsWith('~/') ||
+        (Platform.isWindows && trimmed.startsWith('~\\'))) {
+      final home =
+          Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+      if (home != null && home.isNotEmpty) {
+        expanded = trimmed.length == 1
+            ? home
+            : p.join(home, trimmed.substring(2));
+      }
+    }
+
+    final normalizedPath = p.normalize(expanded);
+    try {
+      final settings = _ref.read(userSettingsProvider);
+      final items = await _repository.getItems(
+        normalizedPath,
+        showHiddenFiles: settings.showHiddenFiles,
+      );
+      _applyLoadedItems(normalizedPath, items);
+      return null;
+    } on PathAccessException {
+      return 'Access denied: Cannot read directory';
+    } on FileSystemException catch (e) {
+      final code = e.osError?.errorCode;
+      if (code == 13 || code == 1) {
+        return 'Access denied: Cannot read directory';
+      }
+      return 'Directory does not exist: $normalizedPath';
+    } catch (_) {
+      return 'Directory does not exist: $normalizedPath';
+    }
+  }
+
+  void startEditingPath() {
+    if (state.currentPath.startsWith('ssh://')) return;
+    state = state.copyWith(isEditingPath: true);
+  }
+
+  void stopEditingPath() {
+    if (state.isEditingPath) {
+      state = state.copyWith(isEditingPath: false);
+    }
+  }
+
+  void _applyLoadedItems(
+    String path,
+    List<FileSystemItem> items, {
+    bool addToVisited = true,
+    String? selectItemPath,
+    bool preserveFocusedIndex = false,
+    bool preserveSelection = false,
+  }) {
+    final sortedItems = _sortItems(
+      items,
+      state.sortColumn,
+      state.sortAscending,
+    );
+
+    int newFocusedIndex;
+    if (preserveFocusedIndex &&
+        state.focusedIndex >= 0 &&
+        state.focusedIndex < state.items.length) {
+      final focusedPath = state.items[state.focusedIndex].path;
+      newFocusedIndex = sortedItems.indexWhere(
+        (item) => item.path == focusedPath,
+      );
+      if (newFocusedIndex < 0) newFocusedIndex = 0;
+    } else {
+      newFocusedIndex = _getFocusedIndex(sortedItems, selectItemPath);
+    }
+
+    final newVisitedPaths = List<String>.from(state.visitedPaths);
+    if (addToVisited && path.isNotEmpty) {
+      newVisitedPaths.add(path);
+    }
+
+    final selectedItemsToUse = preserveSelection
+        ? state.selectedItems
+              .where((p) => sortedItems.any((item) => item.path == p))
+              .toSet()
+        : <String>{};
+
+    state = state.copyWith(
+      currentPath: path,
+      items: sortedItems,
+      selectedItems: preserveSelection ? selectedItemsToUse : {},
+      focusedIndex: newFocusedIndex,
+      isEditingPath: false,
+      visitedPaths: newVisitedPaths,
+      quickFilterText: '',
+    );
+
+    _allItems = sortedItems;
+
+    _savePath(path);
+
+    _ref.read(userSettingsProvider.notifier).indexPath(path);
   }
 
   int _getFocusedIndex(

@@ -115,14 +115,16 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
 
         if (event is KeyDownEvent) {
           if (isNavigationKey) {
-            final activePanelIdForNav =
-                ref.read(focusProvider.notifier).getActivePanelId();
-            final isRenaming =
-                ref
-                    .read(panelStateProvider(activePanelIdForNav))
-                    .editingPath !=
-                null;
-            if (!isRenaming) {
+            final activePanelIdForNav = ref
+                .read(focusProvider.notifier)
+                .getActivePanelId();
+            final navPanelState = ref.read(
+              panelStateProvider(activePanelIdForNav),
+            );
+            final isEditing =
+                navPanelState.editingPath != null ||
+                navPanelState.isEditingPath;
+            if (!isEditing) {
               _startKeyRepeat(context, ref, event.logicalKey);
             }
             return KeyEventResult.ignored;
@@ -144,9 +146,10 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         );
         final currentPanelState = ref.read(panelStateProvider(activePanelId));
 
-        // If renaming is in progress, disable all keyboard shortcuts
-        // The RenameField will handle Escape, Enter, and text input.
-        if (currentPanelState.editingPath != null) {
+        // If renaming or editing the path bar is in progress, disable all
+        // panel shortcuts; the active field handles Escape, Enter, and input.
+        if (currentPanelState.editingPath != null ||
+            currentPanelState.isEditingPath) {
           return KeyEventResult.ignored;
         }
 
@@ -724,6 +727,9 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
           barrierColor: Colors.transparent,
           builder: (context) => const OmniDialog(initialText: 'r '),
         );
+        return KeyEventResult.handled;
+      case 'editPath':
+        panelController.startEditingPath();
         return KeyEventResult.handled;
       case 'connectToServer':
         showDialog(

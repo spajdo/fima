@@ -366,6 +366,14 @@ class KeyMapActionDefs {
       omniPanelOrder: 27,
     ),
     KeyMapAction(
+      id: 'editPath',
+      label: 'Edit Path',
+      defaultShortcutLinux: 'Ctrl+L',
+      defaultShortcutMacOS: '⌘ + L',
+      showInOmniPanel: true,
+      omniPanelOrder: 28,
+    ),
+    KeyMapAction(
       id: 'globalToggleWindow',
       label: 'Toggle Window (Global)',
       defaultShortcutLinux: 'Ctrl + Alt + F1',

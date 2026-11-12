@@ -11,6 +11,7 @@ class PanelState {
   final Set<String> selectedItems;
   final int focusedIndex;
   final String? editingPath;
+  final bool isEditingPath;
   final List<String> visitedPaths;
   final String quickFilterText;
   final PanelOperationProgress? operationProgress;
@@ -23,6 +24,7 @@ class PanelState {
     this.selectedItems = const {},
     this.focusedIndex = -1,
     this.editingPath,
+    this.isEditingPath = false,
     this.visitedPaths = const [],
     this.quickFilterText = '',
     this.operationProgress,
@@ -36,6 +38,7 @@ class PanelState {
     Set<String>? selectedItems,
     int? focusedIndex,
     String? editingPath,
+    bool? isEditingPath,
     List<String>? visitedPaths,
     String? quickFilterText,
     PanelOperationProgress? operationProgress,
@@ -49,6 +52,7 @@ class PanelState {
       selectedItems: selectedItems ?? this.selectedItems,
       focusedIndex: focusedIndex ?? this.focusedIndex,
       editingPath: editingPath ?? this.editingPath,
+      isEditingPath: isEditingPath ?? this.isEditingPath,
       visitedPaths: visitedPaths ?? this.visitedPaths,
       quickFilterText: quickFilterText ?? this.quickFilterText,
       operationProgress: clearOperationProgress
@@ -66,6 +70,7 @@ class PanelState {
       selectedItems: selectedItems,
       focusedIndex: focusedIndex,
       editingPath: null,
+      isEditingPath: isEditingPath,
       visitedPaths: visitedPaths,
       quickFilterText: quickFilterText,
       operationProgress: operationProgress,
