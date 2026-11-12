@@ -1,13 +1,29 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:fima/domain/entity/file_system_item.dart';
+import 'package:fima/presentation/widgets/popups/image_preview_dialog.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_html/flutter_html.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
+
+const int _maxPreviewFileSizeBytes = 5 * 1024 * 1024;
+
+/// Opens the appropriate preview dialog (image viewer or text/formatted preview)
+/// for [item].
+Future<void> showFilePreviewDialog(BuildContext context, FileSystemItem item) {
+  return showDialog(
+    context: context,
+    barrierColor: Colors.black54,
+    builder: (context) => ImagePreviewDialog.isSupportedImageFile(item.name)
+        ? ImagePreviewDialog(fileItem: item)
+        : FilePreviewDialog(fileItem: item),
+  );
+}
 
 class _PreviewResult {
   final String rawText;
@@ -26,7 +42,7 @@ Future<dynamic> _readFileInBackground(Map<String, dynamic> args) async {
   if (!file.existsSync()) return null;
 
   final length = file.lengthSync();
-  if (length > 1024 * 100) return '__TOO_LARGE__';
+  if (length > _maxPreviewFileSizeBytes) return '__TOO_LARGE__';
 
   final bytes = file.readAsBytesSync();
 
@@ -125,7 +141,7 @@ class _FilePreviewDialogState extends State<FilePreviewDialog> {
         });
       } else if (result == '__TOO_LARGE__') {
         setState(() {
-          _error = 'File is too large to preview (limit 100KB).';
+          _error = 'File is too large to preview (limit 5MB).';
           _isLoading = false;
         });
       } else if (result == '__BINARY__') {

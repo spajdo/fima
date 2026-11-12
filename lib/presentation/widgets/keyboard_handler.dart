@@ -834,11 +834,7 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         panelState.focusedIndex < panelState.items.length) {
       final item = panelState.items[panelState.focusedIndex];
       if (!item.isDirectory && !item.isParentDetails) {
-        showDialog(
-          context: context,
-          barrierColor: Colors.black54,
-          builder: (context) => FilePreviewDialog(fileItem: item),
-        );
+        showFilePreviewDialog(context, item);
       }
     }
   }
