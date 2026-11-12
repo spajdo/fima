@@ -93,21 +93,24 @@ class _MainScreenState extends ConsumerState<MainScreen> {
                                   initialPath: settings.leftPanelPath,
                                 ),
                               ),
-                              GestureDetector(
-                                behavior: HitTestBehavior.translucent,
-                                onHorizontalDragUpdate: (details) {
-                                  final newRatio =
-                                      (_splitRatio + details.delta.dx / width)
-                                          .clamp(0.2, 0.8);
-                                  _updateSplitRatio(newRatio);
-                                },
-                                child: Container(
-                                  width: 4,
-                                  color: fimaTheme.borderColor,
-                                  child: Center(
-                                    child: Container(
-                                      width: 2,
-                                      color: fimaTheme.secondaryTextColor,
+                              MouseRegion(
+                                cursor: SystemMouseCursors.resizeLeftRight,
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onHorizontalDragUpdate: (details) {
+                                    final newRatio =
+                                        (_splitRatio + details.delta.dx / width)
+                                            .clamp(0.2, 0.8);
+                                    _updateSplitRatio(newRatio);
+                                  },
+                                  child: Container(
+                                    width: 4,
+                                    color: fimaTheme.borderColor,
+                                    child: Center(
+                                      child: Container(
+                                        width: 2,
+                                        color: fimaTheme.secondaryTextColor,
+                                      ),
                                     ),
                                   ),
                                 ),
