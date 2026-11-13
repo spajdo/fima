@@ -1,6 +1,7 @@
 # AGENTS.md - Fima AI Development Guide
 
 This document provides guidelines and commands for agents working on the Fima project (two-panel file manager).
+For the complete module map, Clean Architecture layer boundaries, and placement rules, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
 ## Build, Lint, and Test Commands
 
@@ -230,18 +231,30 @@ void main() {
 
 ### File Organization
 
+See **[ARCHITECTURE.md](ARCHITECTURE.md)** for full module descriptions, layer boundaries, and anti-duplication placement rules.
+
 ```
 lib/
-├── domain/           # Business logic layer
-│   ├── entity/      # Data models
-│   └── repository/  # Repository interfaces
-├── infrastructure/  # Implementation details
-│   ├── repository/  # Repository implementations
-│   └── service/     # External services
-└── presentation/    # UI layer
-    ├── providers/   # Riverpod providers
-    └── widgets/    # UI components
+├── domain/                 # Pure Dart business logic layer (no Flutter/OS deps)
+│   ├── entity/            # Immutable models & keymap action definitions
+│   ├── repository/        # Abstract repository interfaces
+│   └── utils/             # Pure helpers (FimaPath, FileItemSorter, FileSizeFormatter)
+├── infrastructure/        # External systems, OS, SFTP, ZIP & isolate services
+│   ├── repository/        # Local, SSH, ZIP, and Compound repositories
+│   └── service/           # Services + metadata/ (stats, checksums, chmod, kind)
+└── presentation/          # Riverpod state & Flutter UI layer
+    ├── providers/         # Controllers, AppActionDispatcher, settings & feature actions
+    └── widgets/
+        ├── panel/         # Panel views + widgets/ & context_menu/
+        └── popups/        # Modal dialogs + info/, omni/, & diff/
 ```
+
+### Architecture & Anti-Duplication Rules
+
+- **Action Dispatch**: Route keyboard shortcuts, Omni palette actions, and context menu actions through `AppActionDispatcher` (`lib/presentation/providers/app_action_dispatcher.dart`). Never duplicate action/dialog execution across widgets.
+- **Layer Purity**: Keep `domain/` free of Flutter/infrastructure imports and keep `infrastructure/` free of `presentation/` imports.
+- **Tab Isolation**: Capture `tabId` / generation tokens (`_loadGeneration`) before `await` calls so async work never updates the wrong panel or tab.
+- **Single-Responsibility Widgets**: Keep panel views and dialogs modular; place sub-widgets inside their feature folder (`panel/widgets/`, `panel/context_menu/`, `popups/info/`, `popups/omni/`, `popups/diff/`).
 
 ### Deprecation Warnings
 
