@@ -1,34 +1,29 @@
 import 'dart:async';
 
-import 'package:fima/domain/entity/app_theme.dart';
-import 'package:fima/domain/entity/file_system_item.dart';
-import 'package:fima/domain/entity/key_map_action.dart';
-import 'package:fima/domain/entity/panel_state.dart';
-import 'package:fima/domain/entity/remote_connection.dart';
-import 'package:fima/infrastructure/service/keyboard_utils.dart';
-import 'package:fima/presentation/providers/drag_state_provider.dart';
-import 'package:fima/presentation/providers/file_system_provider.dart';
-import 'package:fima/presentation/providers/focus_provider.dart';
-import 'package:fima/presentation/providers/operation_status_provider.dart';
-import 'package:fima/presentation/providers/overlay_provider.dart';
-import 'package:fima/presentation/providers/panel_tabs_provider.dart';
-import 'package:fima/presentation/providers/settings_provider.dart';
-import 'package:fima/presentation/providers/theme_provider.dart';
-import 'package:fima/presentation/widgets/panel/draggable_file_item.dart';
-import 'package:fima/presentation/widgets/panel/drop_target_item.dart';
-import 'package:fima/presentation/widgets/panel/file_context_menu.dart';
-import 'package:fima/presentation/widgets/panel/panel_tab_bar.dart';
-import 'package:fima/presentation/widgets/panel/rename_field.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:file_icon/file_icon.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
-import 'package:path/path.dart' as p;
 import 'package:super_drag_and_drop/super_drag_and_drop.dart';
 
+import 'package:fima/domain/entity/file_system_item.dart';
+import 'package:fima/presentation/providers/drag_state_provider.dart';
+import 'package:fima/presentation/providers/file_system_provider.dart';
+import 'package:fima/presentation/providers/focus_provider.dart';
+import 'package:fima/presentation/providers/panel_tabs_provider.dart';
+import 'package:fima/presentation/providers/settings_provider.dart';
+import 'package:fima/presentation/providers/theme_provider.dart';
+import 'package:fima/presentation/widgets/panel/drop_target_item.dart';
+import 'package:fima/presentation/widgets/panel/file_context_menu.dart';
+import 'package:fima/presentation/widgets/panel/panel_tab_bar.dart';
+import 'package:fima/presentation/widgets/panel/widgets/panel_column_header.dart';
+import 'package:fima/presentation/widgets/panel/widgets/panel_drop_handler.dart';
+import 'package:fima/presentation/widgets/panel/widgets/panel_file_row.dart';
+import 'package:fima/presentation/widgets/panel/widgets/panel_footer_bars.dart';
+import 'package:fima/presentation/widgets/panel/widgets/panel_path_bar.dart';
+
+/// Displays one file-manager panel with tabs, path bar, sortable table, and footer.
 class FilePanel extends ConsumerStatefulWidget {
   final String panelId;
   final String? initialPath;
@@ -42,19 +37,9 @@ class FilePanel extends ConsumerStatefulWidget {
 class _FilePanelState extends ConsumerState<FilePanel> {
   final DateFormat _dateFormat = DateFormat('yyyy-MM-dd HH:mm');
   final ScrollController _scrollController = ScrollController();
-  final ScrollController _breadcrumbScrollController = ScrollController();
-  // Explicit Flutter FocusNode for this panel. When the user taps to
-  // activate this panel we call requestFocus() so that Flutter focus
-  // leaves any other focused widget (e.g. the terminal's TerminalView)
-  // and routes key events back to the KeyboardHandler ancestor.
-  late final FocusNode _panelFocusNode;
-  late final TextEditingController _pathController;
-  late final FocusNode _pathFocusNode;
-  String? _pathError;
-  bool _isValidatingPath = false;
 
-  // Column width fractions (the third column gets the remainder).
-  // Defaults approximate the old 3:1:2 flex ratio.
+  late final FocusNode _panelFocusNode;
+
   double _nameWidthFraction = 0.50;
   double _sizeWidthFraction = 0.17;
 
@@ -70,13 +55,13 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   String get _activeTabId =>
       ref.read(panelTabsProvider(widget.panelId)).activeTabId;
 
+  ActivePanel get _activePanelEnum =>
+      widget.panelId == 'left' ? ActivePanel.left : ActivePanel.right;
+
   @override
   void initState() {
     super.initState();
     _panelFocusNode = FocusNode();
-    _pathController = TextEditingController();
-    _pathFocusNode = FocusNode(onKeyEvent: _handlePathKeyEvent);
-    _pathFocusNode.addListener(_onPathFocusChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref
@@ -87,13 +72,14 @@ class _FilePanelState extends ConsumerState<FilePanel> {
 
   @override
   void dispose() {
-    _pathFocusNode.removeListener(_onPathFocusChanged);
-    _pathFocusNode.dispose();
-    _pathController.dispose();
     _scrollController.dispose();
-    _breadcrumbScrollController.dispose();
     _panelFocusNode.dispose();
     super.dispose();
+  }
+
+  void _activateThisPanel() {
+    _panelFocusNode.requestFocus();
+    ref.read(focusProvider.notifier).setActivePanel(_activePanelEnum);
   }
 
   void _handleTapDown(
@@ -107,7 +93,6 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     final isCtrlOrCmd = kb.isControlPressed || kb.isMetaPressed;
     final isShift = kb.isShiftPressed;
 
-    // Double-tap → enter the item (navigate / open)
     if (_lastTappedIndex == index &&
         _lastTapTime != null &&
         now.difference(_lastTapTime!) < _doubleTapDelay &&
@@ -119,41 +104,22 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       return;
     }
 
-    // Take Flutter focus back from the terminal / other widgets
-    _panelFocusNode.requestFocus();
-    ref
-        .read(focusProvider.notifier)
-        .setActivePanel(
-          widget.panelId == 'left' ? ActivePanel.left : ActivePanel.right,
-        );
+    _activateThisPanel();
 
     if (isCtrlOrCmd) {
-      // Ctrl/Cmd + click: toggle this item's selection, keep all others
       controller.toggleSelection(item.path);
       controller.setFocusedIndex(index);
-      _lastTappedIndex = index; // new anchor for future shift-clicks
+      _lastTappedIndex = index;
     } else if (isShift) {
-      // Shift + click: select range from the current focused index to clicked item
       final anchor = _lastTappedIndex ?? currentFocusedIndex;
       controller.selectRange(anchor, index);
       controller.setFocusedIndex(index);
-      // Keep _lastTappedIndex unchanged so repeated Shift+clicks extend from same anchor
     } else {
-      // Plain click: only move focus, do not change selection
       controller.setFocusedIndex(index);
-      _lastTappedIndex = index; // reset anchor
+      _lastTappedIndex = index;
     }
 
     _lastTapTime = now;
-  }
-
-  void _activateThisPanel() {
-    _panelFocusNode.requestFocus();
-    ref
-        .read(focusProvider.notifier)
-        .setActivePanel(
-          widget.panelId == 'left' ? ActivePanel.left : ActivePanel.right,
-        );
   }
 
   Future<void> _handleItemContextMenu(
@@ -214,599 +180,31 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       return;
     }
 
-    final double viewportHeight = _scrollController.position.viewportDimension;
-    final double scrollOffset = _scrollController.offset;
-    final double itemTop = index * itemHeight;
-    final double itemBottom = itemTop + itemHeight;
+    final viewportHeight = _scrollController.position.viewportDimension;
+    final scrollOffset = _scrollController.offset;
+    final itemTop = index * itemHeight;
+    final itemBottom = itemTop + itemHeight;
+    final buffer = itemHeight;
 
-    // Buffer for "penultimate" behavior (1 item buffer)
-    final double buffer = itemHeight;
-
-    // Scroll down if item is below viewport (minus buffer)
     if (itemBottom > scrollOffset + viewportHeight - buffer) {
-      final double targetOffset = itemBottom - viewportHeight + buffer;
-      _scrollController.jumpTo(targetOffset);
-    }
-    // Scroll up if item is above viewport (plus buffer)
-    else if (itemTop < scrollOffset + buffer) {
-      final double targetOffset = itemTop - buffer;
-      // Clamp to 0 to avoid negative scroll
+      _scrollController.jumpTo(itemBottom - viewportHeight + buffer);
+    } else if (itemTop < scrollOffset + buffer) {
+      final targetOffset = itemTop - buffer;
       _scrollController.jumpTo(targetOffset < 0 ? 0 : targetOffset);
     }
   }
 
-  @override
-  void didUpdateWidget(FilePanel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-  }
-
-  String _formatSize(int bytes) {
-    if (bytes < 0) return 'N/A';
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
-  }
-
-  Widget _buildColumnHeader(
-    String title,
-    SortColumn column,
-    PanelState state,
-    FimaTheme fimaTheme,
-    VoidCallback onTap,
-  ) {
-    final theme = Theme.of(context);
-    final isActive = state.sortColumn == column;
-
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              title,
-              style: theme.textTheme.labelSmall?.copyWith(
-                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                color: fimaTheme.textColor,
-              ),
-            ),
-            if (isActive) ...[
-              const SizedBox(width: 4),
-              Icon(
-                state.sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                size: 12,
-                color: fimaTheme.textColor,
-              ),
-            ],
-          ],
-        ),
-      ),
+  Future<void> _handleDrop(PerformDropEvent event, String targetPath) {
+    return PanelDropHandler.handleDrop(
+      ref: ref,
+      panelId: widget.panelId,
+      destinationTabId: _activeTabId,
+      event: event,
+      targetPath: targetPath,
     );
   }
 
-  Widget _buildSplitter({
-    required FimaTheme fimaTheme,
-    required double height,
-    required void Function(double delta, double totalWidth) onDrag,
-    required double totalWidth,
-  }) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.resizeColumn,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onHorizontalDragUpdate: (details) {
-          onDrag(details.delta.dx, totalWidth);
-        },
-        child: SizedBox(
-          width: _splitterWidth,
-          height: height,
-          child: Center(
-            child: Container(
-              width: _splitterLineWidth,
-              height: height,
-              color: fimaTheme.borderColor,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFileIcon(FileSystemItem item, double size) {
-    if (item.isParentDetails) {
-      return FaIcon(FontAwesomeIcons.turnUp, size: size);
-    }
-    if (item.isDirectory) {
-      return FaIcon(FontAwesomeIcons.folder, size: size, color: Colors.amber);
-    }
-    return FileIcon(item.name, size: size);
-  }
-
-  Future<void> _handleDrop(PerformDropEvent event, String targetPath) async {
-    final dragState = ref.read(dragStateProvider);
-
-    if (dragState.sourcePanelId != null) {
-      // Internal drag: move dragged paths into targetPath.
-      final paths = dragState.draggedPaths;
-      if (paths.isEmpty) return;
-
-      // Skip if every item already lives directly inside the target folder.
-      final allSameParent = paths.every(
-        (path) => p.dirname(path) == targetPath,
-      );
-      if (allSameParent) return;
-
-      // Skip if any dragged path IS the target folder.
-      if (paths.any((path) => path == targetPath)) return;
-
-      final sourcePanelId = dragState.sourcePanelId!;
-      final sourceTabId = dragState.sourceTabId;
-      final destTabId = _activeTabId;
-      ref.read(dragStateProvider.notifier).endDrag();
-
-      await ref
-          .read(operationStatusProvider.notifier)
-          .startDropOperation(
-            sourcePaths: paths,
-            sourcePanelId: sourcePanelId,
-            sourceTabId: sourceTabId,
-            destinationPanelId: widget.panelId,
-            destinationTabId: destTabId,
-            destinationPath: targetPath,
-            isCopy: false,
-          );
-    } else {
-      // External drag: copy each file into targetPath.
-      final destTabId = _activeTabId;
-      final repository = ref.read(fileSystemRepositoryProvider);
-      for (final dropItem in event.session.items) {
-        final reader = dropItem.dataReader;
-        if (reader == null) continue;
-        if (reader.canProvide(Formats.fileUri)) {
-          final completer = Completer<Uri?>();
-          reader.getValue<Uri>(
-            Formats.fileUri,
-            (value) => completer.complete(value),
-          );
-          final uri = await completer.future;
-          if (uri != null) {
-            final sourcePath = uri.toFilePath();
-            final dest = p.join(targetPath, p.basename(sourcePath));
-            try {
-              await repository.copyItem(sourcePath, dest);
-            } catch (e) {
-              debugPrint('Error copying dropped file $sourcePath: $e');
-            }
-          }
-        }
-      }
-      // Refresh the tab that received the drop.
-      if (ref
-          .read(panelTabsProvider(widget.panelId).notifier)
-          .hasTab(destTabId)) {
-        await ref
-            .read(panelStateProvider(destTabId).notifier)
-            .loadPath(
-              targetPath,
-              addToVisited: false,
-              preserveFocusedIndex: true,
-            );
-      }
-    }
-  }
-
-  void _onPathFocusChanged() {
-    if (!_pathFocusNode.hasFocus) {
-      final panelState = ref.read(panelStateProvider(_activeTabId));
-      if (panelState.isEditingPath) {
-        _cancelPathEditing(restoreFocus: false);
-      }
-    }
-  }
-
-  void _activatePathEditor(String currentPath) {
-    _pathController.text = currentPath;
-    if (_pathError != null) {
-      setState(() {
-        _pathError = null;
-      });
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (!ref.read(panelStateProvider(_activeTabId)).isEditingPath) return;
-      _pathFocusNode.requestFocus();
-      _selectAllPathText();
-    });
-  }
-
-  void _selectAllPathText() {
-    _pathController.selection = TextSelection(
-      baseOffset: 0,
-      extentOffset: _pathController.text.length,
-    );
-  }
-
-  KeyEventResult _handlePathKeyEvent(FocusNode node, KeyEvent event) {
-    if (event is KeyDownEvent) {
-      if (event.logicalKey == LogicalKeyboardKey.escape) {
-        _cancelPathEditing(restoreFocus: true);
-        return KeyEventResult.handled;
-      }
-      if (event.logicalKey == LogicalKeyboardKey.enter ||
-          event.logicalKey == LogicalKeyboardKey.numpadEnter) {
-        _submitPath();
-        return KeyEventResult.handled;
-      }
-      final currentShortcut = KeyboardUtils.buildShortcutString(event);
-      if (currentShortcut.isNotEmpty) {
-        final editPathShortcut = ref
-            .read(userSettingsProvider.notifier)
-            .getEffectiveShortcut('editPath');
-        if (editPathShortcut != null &&
-            KeyMapActionDefs.shortcutsMatch(
-              editPathShortcut,
-              currentShortcut,
-            )) {
-          _selectAllPathText();
-          return KeyEventResult.handled;
-        }
-      }
-    }
-    return KeyEventResult.ignored;
-  }
-
-  Future<void> _submitPath() async {
-    if (_isValidatingPath) return;
-    _isValidatingPath = true;
-
-    final tabId = _activeTabId;
-    final input = _pathController.text;
-    final controller = ref.read(panelStateProvider(tabId).notifier);
-    final error = await controller.navigateToPath(input);
-
-    if (!mounted) return;
-    _isValidatingPath = false;
-
-    if (error == null) {
-      if (_pathError != null) {
-        setState(() {
-          _pathError = null;
-        });
-      }
-      _panelFocusNode.requestFocus();
-    } else {
-      setState(() {
-        _pathError = error;
-      });
-      ref.read(overlayProvider.notifier).showToast(error, isError: true);
-      if (ref.read(panelStateProvider(tabId)).isEditingPath &&
-          !_pathFocusNode.hasFocus) {
-        _pathFocusNode.requestFocus();
-      }
-    }
-  }
-
-  void _cancelPathEditing({required bool restoreFocus}) {
-    final tabId = _activeTabId;
-    final controller = ref.read(panelStateProvider(tabId).notifier);
-    final panelState = ref.read(panelStateProvider(tabId));
-    if (!panelState.isEditingPath) return;
-
-    _pathController.text = panelState.currentPath;
-    if (_pathError != null) {
-      setState(() {
-        _pathError = null;
-      });
-    }
-    controller.stopEditingPath();
-
-    if (restoreFocus) {
-      _panelFocusNode.requestFocus();
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
-        final leftTabId = ref.read(panelTabsProvider('left')).activeTabId;
-        final rightTabId = ref.read(panelTabsProvider('right')).activeTabId;
-        final leftEditing = ref
-            .read(panelStateProvider(leftTabId))
-            .isEditingPath;
-        final rightEditing = ref
-            .read(panelStateProvider(rightTabId))
-            .isEditingPath;
-        if (leftEditing || rightEditing) return;
-
-        final currentFocus = FocusManager.instance.primaryFocus;
-        if (currentFocus == null ||
-            currentFocus is FocusScopeNode ||
-            currentFocus == _pathFocusNode) {
-          ref.read(keyboardHandlerFocusNodeProvider).requestFocus();
-        }
-      });
-    }
-  }
-
-  List<_PathBreadcrumb> _parseBreadcrumbs(String rawPath) {
-    if (rawPath.isEmpty) return const [];
-
-    // Windows drive path (e.g. C:\Users\name)
-    final driveMatch = RegExp(
-      r'^([A-Za-z]:)(?:[/\\](.*))?$',
-    ).firstMatch(rawPath);
-    if (driveMatch != null) {
-      final drive = driveMatch.group(1)!;
-      final rest = driveMatch.group(2) ?? '';
-      final breadcrumbs = <_PathBreadcrumb>[
-        _PathBreadcrumb(label: drive, targetPath: '$drive\\'),
-      ];
-      final parts = rest
-          .split(RegExp(r'[/\\]+'))
-          .where((part) => part.isNotEmpty)
-          .toList();
-      var running = '$drive\\';
-      for (int i = 0; i < parts.length; i++) {
-        final part = parts[i];
-        running = i == 0 ? '$drive\\$part' : '$running\\$part';
-        breadcrumbs.add(_PathBreadcrumb(label: part, targetPath: running));
-      }
-      return breadcrumbs;
-    }
-
-    // POSIX path (e.g. /Users/misotech/Projects or /)
-    if (rawPath.startsWith('/')) {
-      final breadcrumbs = <_PathBreadcrumb>[
-        const _PathBreadcrumb(label: '/', targetPath: '/'),
-      ];
-      final parts = rawPath.split('/').where((part) => part.isNotEmpty);
-      var running = '';
-      for (final part in parts) {
-        running = '$running/$part';
-        breadcrumbs.add(_PathBreadcrumb(label: part, targetPath: running));
-      }
-      return breadcrumbs;
-    }
-
-    return [_PathBreadcrumb(label: rawPath, targetPath: rawPath)];
-  }
-
-  Widget _buildLocalPathHeader(
-    PanelState panelState,
-    PanelController controller,
-    FimaTheme fimaTheme,
-    ThemeData theme,
-    double fontSize,
-  ) {
-    final textStyle = theme.textTheme.bodySmall?.copyWith(
-      fontSize: fontSize,
-      color: fimaTheme.textColor,
-    );
-    final borderColor = _pathError != null
-        ? Colors.redAccent
-        : panelState.isEditingPath
-        ? fimaTheme.accentColor
-        : fimaTheme.borderColor;
-    final breadcrumbs = _parseBreadcrumbs(panelState.currentPath);
-
-    return Container(
-      constraints: BoxConstraints(minHeight: fontSize + 16),
-      alignment: Alignment.centerLeft,
-      decoration: BoxDecoration(
-        color: panelState.isEditingPath
-            ? fimaTheme.backgroundColor
-            : fimaTheme.surfaceColor,
-        border: Border(bottom: BorderSide(color: borderColor)),
-      ),
-      child: panelState.isEditingPath
-          ? TextField(
-              controller: _pathController,
-              focusNode: _pathFocusNode,
-              cursorWidth: 1.0,
-              maxLines: 1,
-              style: textStyle,
-              decoration: const InputDecoration(
-                border: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                errorBorder: InputBorder.none,
-                disabledBorder: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 6,
-                ),
-                isDense: true,
-              ),
-              onChanged: (_) {
-                if (_pathError != null) {
-                  setState(() {
-                    _pathError = null;
-                  });
-                }
-              },
-              onEditingComplete: () {},
-              onTapOutside: (_) => _cancelPathEditing(restoreFocus: false),
-            )
-          : breadcrumbs.isEmpty
-          ? MouseRegion(
-              cursor: SystemMouseCursors.text,
-              child: GestureDetector(
-                key: Key('path_bar_edit_area_${widget.panelId}'),
-                behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  _activateThisPanel();
-                  controller.startEditingPath();
-                },
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 6,
-                  ),
-                  child: Text('...', style: textStyle, maxLines: 1),
-                ),
-              ),
-            )
-          : SizedBox(
-              width: double.infinity,
-              height: fontSize + 16,
-              child: Stack(
-                alignment: Alignment.centerLeft,
-                children: [
-                  Positioned.fill(
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.text,
-                      child: GestureDetector(
-                        key: Key('path_bar_edit_area_${widget.panelId}'),
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () {
-                          _activateThisPanel();
-                          controller.startEditingPath();
-                        },
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(right: 24),
-                    child: SingleChildScrollView(
-                      controller: _breadcrumbScrollController,
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (int i = 0; i < breadcrumbs.length; i++) ...[
-                            if (i > 0)
-                              Icon(
-                                Icons.chevron_right,
-                                size: fontSize + 1,
-                                color: fimaTheme.secondaryTextColor,
-                              ),
-                            _BreadcrumbChip(
-                              label: breadcrumbs[i].label,
-                              isCurrent: i == breadcrumbs.length - 1,
-                              fontSize: fontSize,
-                              fimaTheme: fimaTheme,
-                              onTap: () {
-                                _activateThisPanel();
-                                controller.loadPath(breadcrumbs[i].targetPath);
-                              },
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-    );
-  }
-
-  /// Shows confirmation for disconnecting SSH and then disconnects.
-  Future<void> _confirmDisconnect() async {
-    final controller = ref.read(panelStateProvider(_activeTabId).notifier);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierColor: Colors.black54,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Disconnect from server?'),
-        content: const Text('The remote connection will be closed.'),
-        actions: [
-          FilledButton(
-            autofocus: true,
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('OK'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true && mounted) {
-      await controller.disconnectSsh();
-    }
-  }
-
-  /// Builds the SSH connection header bar shown in place of the local path header.
-  Widget _buildSshHeader(
-    PanelState panelState,
-    FimaTheme fimaTheme,
-    ThemeData theme,
-    double fontSize,
-  ) {
-    final connId = RemoteConnection.connectionIdFromSshUrl(
-      panelState.currentPath,
-    );
-    final settings = ref.read(userSettingsProvider);
-    final connection = settings.remoteConnections
-        .cast<RemoteConnection?>()
-        .firstWhere((c) => c?.id == connId, orElse: () => null);
-    final connectionName = connection?.name ?? connId;
-    final remotePath = RemoteConnection.remotePathFromSshUrl(
-      panelState.currentPath,
-    );
-
-    return Container(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: fimaTheme.surfaceColor,
-        border: Border(bottom: BorderSide(color: fimaTheme.borderColor)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.dns, size: 14, color: fimaTheme.accentColor),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              '$connectionName — $remotePath',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: fimaTheme.textColor,
-                fontSize: 12,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          InkWell(
-            onTap: _confirmDisconnect,
-            borderRadius: BorderRadius.circular(4),
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: Icon(Icons.close, size: 14, color: fimaTheme.textColor),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final tabsState = ref.watch(panelTabsProvider(widget.panelId));
-    final activeTabId = tabsState.activeTabId;
-    final panelState = ref.watch(panelStateProvider(activeTabId));
-    final controller = ref.read(panelStateProvider(activeTabId).notifier);
-    final fimaTheme = ref.watch(themeProvider);
-    final theme = Theme.of(context);
-    final settings = ref.watch(userSettingsProvider);
-    final focusState = ref.watch(focusProvider);
-    final dragState = ref.watch(dragStateProvider);
-    final isActivePanel =
-        (widget.panelId == 'left' &&
-            focusState.activePanel == ActivePanel.left) ||
-        (widget.panelId == 'right' &&
-            focusState.activePanel == ActivePanel.right);
-    final fontSize = settings.fontSize;
-    final itemHeight = fontSize + 16.0;
-
+  void _registerListeners(String activeTabId, double itemHeight) {
     ref.listen<List<dynamic>>(
       panelTabsProvider(widget.panelId).select((s) => s.tabs),
       (_, nextTabs) {
@@ -819,9 +217,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       next,
     ) {
       if (previous == null || previous == next) return;
-      final currentTabId = ref
-          .read(panelTabsProvider(widget.panelId))
-          .activeTabId;
+      final currentTabId = _activeTabId;
       final currentPanelState = ref.read(panelStateProvider(currentTabId));
       if (currentPanelState.currentPath.isNotEmpty) {
         ref
@@ -839,48 +235,45 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       previousTabId,
       nextTabId,
     ) {
-      if (previousTabId != null && previousTabId != nextTabId) {
-        if (_scrollController.hasClients) {
-          _scrollOffsets[previousTabId] = _scrollController.offset;
-        }
-        if (_pathError != null) {
-          setState(() {
-            _pathError = null;
-          });
-        }
-        final prevState = ref.read(panelStateProvider(previousTabId));
-        if (prevState.isEditingPath) {
-          ref
-              .read(panelStateProvider(previousTabId).notifier)
-              .stopEditingPath();
-        }
-
-        final targetOffset = _scrollOffsets[nextTabId] ?? 0.0;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || !_scrollController.hasClients) return;
-          final maxExtent = _scrollController.position.maxScrollExtent;
-          _scrollController.jumpTo(targetOffset.clamp(0.0, maxExtent));
-        });
+      if (previousTabId == null || previousTabId == nextTabId) return;
+      if (_scrollController.hasClients) {
+        _scrollOffsets[previousTabId] = _scrollController.offset;
       }
+      final prevState = ref.read(panelStateProvider(previousTabId));
+      if (prevState.isEditingPath) {
+        ref.read(panelStateProvider(previousTabId).notifier).stopEditingPath();
+      }
+
+      final targetOffset = _scrollOffsets[nextTabId] ?? 0.0;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        final maxExtent = _scrollController.position.maxScrollExtent;
+        _scrollController.jumpTo(targetOffset.clamp(0.0, maxExtent));
+      });
     });
 
     ref.listen(panelStateProvider(activeTabId), (previous, next) {
       if (previous?.focusedIndex != next.focusedIndex) {
         _scrollToIndex(next.focusedIndex, next.items.length, itemHeight);
       }
-      if (previous?.isEditingPath != true && next.isEditingPath) {
-        _activatePathEditor(next.currentPath);
-      }
-      if (previous?.currentPath != next.currentPath ||
-          (previous?.isEditingPath == true && !next.isEditingPath)) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || !_breadcrumbScrollController.hasClients) return;
-          _breadcrumbScrollController.jumpTo(
-            _breadcrumbScrollController.position.maxScrollExtent,
-          );
-        });
-      }
     });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tabsState = ref.watch(panelTabsProvider(widget.panelId));
+    final activeTabId = tabsState.activeTabId;
+    final panelState = ref.watch(panelStateProvider(activeTabId));
+    final controller = ref.read(panelStateProvider(activeTabId).notifier);
+    final fimaTheme = ref.watch(themeProvider);
+    final settings = ref.watch(userSettingsProvider);
+    final focusState = ref.watch(focusProvider);
+    final dragState = ref.watch(dragStateProvider);
+    final isActivePanel = focusState.activePanel == _activePanelEnum;
+    final fontSize = settings.fontSize;
+    final itemHeight = fontSize + 16.0;
+
+    _registerListeners(activeTabId, itemHeight);
 
     return Listener(
       onPointerSignal: (event) {
@@ -888,8 +281,6 @@ class _FilePanelState extends ConsumerState<FilePanel> {
             (HardwareKeyboard.instance.isControlPressed ||
                 HardwareKeyboard.instance.isMetaPressed)) {
           final settingsController = ref.read(userSettingsProvider.notifier);
-          // Scroll up (negative delta) -> Increase font size
-          // Scroll down (positive delta) -> Decrease font size
           if (event.scrollDelta.dy < 0) {
             settingsController.setFontSize(fontSize + 1);
           } else if (event.scrollDelta.dy > 0) {
@@ -901,16 +292,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
         focusNode: _panelFocusNode,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () {
-            _panelFocusNode.requestFocus(); // take Flutter focus from terminal
-            ref
-                .read(focusProvider.notifier)
-                .setActivePanel(
-                  widget.panelId == 'left'
-                      ? ActivePanel.left
-                      : ActivePanel.right,
-                );
-          },
+          onTap: _activateThisPanel,
           child: Container(
             decoration: BoxDecoration(
               border: Border.all(color: fimaTheme.borderColor),
@@ -918,7 +300,6 @@ class _FilePanelState extends ConsumerState<FilePanel> {
             ),
             child: Column(
               children: [
-                // Tab bar (shown when 2+ tabs exist in this panel)
                 PanelTabBar(
                   tabs: tabsState.tabs,
                   activeTabIndex: tabsState.activeTabIndex,
@@ -926,14 +307,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                   fontSize: fontSize,
                   remoteConnections: settings.remoteConnections,
                   onSelectTab: (index) {
-                    _panelFocusNode.requestFocus();
-                    ref
-                        .read(focusProvider.notifier)
-                        .setActivePanel(
-                          widget.panelId == 'left'
-                              ? ActivePanel.left
-                              : ActivePanel.right,
-                        );
+                    _activateThisPanel();
                     ref
                         .read(panelTabsProvider(widget.panelId).notifier)
                         .selectTab(index);
@@ -944,106 +318,50 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                         .closeTab(tabId);
                   },
                 ),
-                // SSH header (shown only for SSH paths)
                 if (panelState.currentPath.startsWith('ssh://'))
-                  _buildSshHeader(panelState, fimaTheme, theme, fontSize),
-                // Local path header
-                if (!panelState.currentPath.startsWith('ssh://'))
-                  _buildLocalPathHeader(
-                    panelState,
-                    controller,
-                    fimaTheme,
-                    theme,
-                    fontSize,
+                  PanelSshHeader(
+                    tabId: activeTabId,
+                    panelState: panelState,
+                    fimaTheme: fimaTheme,
+                  )
+                else
+                  PanelPathBar(
+                    panelId: widget.panelId,
+                    tabId: activeTabId,
+                    panelState: panelState,
+                    fimaTheme: fimaTheme,
+                    fontSize: fontSize,
+                    onActivatePanel: _activateThisPanel,
+                    onRestorePanelFocus: _panelFocusNode.requestFocus,
                   ),
-                // Column headers
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  color: fimaTheme.surfaceColor,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final iconWidth = fontSize + 10;
-                      final availableWidth =
-                          constraints.maxWidth - iconWidth - _splitterWidth * 2;
-                      final sizeWidth = availableWidth * _sizeWidthFraction;
-                      final modifiedWidth =
-                          availableWidth *
-                          (1.0 - _nameWidthFraction - _sizeWidthFraction);
-
-                      return Row(
-                        children: [
-                          SizedBox(width: iconWidth), // Icon space
-                          Expanded(
-                            child: _buildColumnHeader(
-                              'Name',
-                              SortColumn.name,
-                              panelState,
-                              fimaTheme,
-                              () => controller.sort(SortColumn.name),
-                            ),
-                          ),
-                          _buildSplitter(
-                            fimaTheme: fimaTheme,
-                            height: 32,
-                            totalWidth: availableWidth,
-                            onDrag: (delta, total) {
-                              setState(() {
-                                final deltaFraction = delta / total;
-                                final newName =
-                                    (_nameWidthFraction + deltaFraction).clamp(
-                                      _minColumnFraction,
-                                      1.0 -
-                                          _sizeWidthFraction -
-                                          _minColumnFraction,
-                                    );
-                                _nameWidthFraction = newName;
-                              });
-                            },
-                          ),
-                          SizedBox(
-                            width: sizeWidth,
-                            child: _buildColumnHeader(
-                              'Size',
-                              SortColumn.size,
-                              panelState,
-                              fimaTheme,
-                              () => controller.sort(SortColumn.size),
-                            ),
-                          ),
-                          _buildSplitter(
-                            fimaTheme: fimaTheme,
-                            height: 32,
-                            totalWidth: availableWidth,
-                            onDrag: (delta, total) {
-                              setState(() {
-                                final deltaFraction = delta / total;
-                                final newSize =
-                                    (_sizeWidthFraction + deltaFraction).clamp(
-                                      _minColumnFraction,
-                                      1.0 -
-                                          _nameWidthFraction -
-                                          _minColumnFraction,
-                                    );
-                                _sizeWidthFraction = newSize;
-                              });
-                            },
-                          ),
-                          SizedBox(
-                            width: modifiedWidth,
-                            child: _buildColumnHeader(
-                              'Modified',
-                              SortColumn.modified,
-                              panelState,
-                              fimaTheme,
-                              () => controller.sort(SortColumn.modified),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
+                PanelColumnHeader(
+                  panelState: panelState,
+                  fimaTheme: fimaTheme,
+                  fontSize: fontSize,
+                  nameWidthFraction: _nameWidthFraction,
+                  sizeWidthFraction: _sizeWidthFraction,
+                  splitterWidth: _splitterWidth,
+                  splitterLineWidth: _splitterLineWidth,
+                  onSort: controller.sort,
+                  onResizeName: (delta, total) {
+                    setState(() {
+                      _nameWidthFraction = (_nameWidthFraction + delta / total)
+                          .clamp(
+                            _minColumnFraction,
+                            1.0 - _sizeWidthFraction - _minColumnFraction,
+                          );
+                    });
+                  },
+                  onResizeSize: (delta, total) {
+                    setState(() {
+                      _sizeWidthFraction = (_sizeWidthFraction + delta / total)
+                          .clamp(
+                            _minColumnFraction,
+                            1.0 - _nameWidthFraction - _minColumnFraction,
+                          );
+                    });
+                  },
                 ),
-                // File list
                 Expanded(
                   child: DropTargetPanel(
                     panelId: widget.panelId,
@@ -1051,17 +369,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                     onDrop: _handleDrop,
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onTap: () {
-                        _panelFocusNode
-                            .requestFocus(); // take Flutter focus from terminal
-                        ref
-                            .read(focusProvider.notifier)
-                            .setActivePanel(
-                              widget.panelId == 'left'
-                                  ? ActivePanel.left
-                                  : ActivePanel.right,
-                            );
-                      },
+                      onTap: _activateThisPanel,
                       onSecondaryTapUp: (details) {
                         _handleBackgroundContextMenu(
                           details.globalPosition,
@@ -1084,320 +392,56 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                               !item.isParentDetails &&
                               dragState.hoveredDropTargetPath == item.path;
 
-                          // Text color is red if selected (Marked), otherwise default
-                          final textColor = isSelected
-                              ? Colors.red
-                              : fimaTheme.textColor;
-
-                          Widget itemRow = GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTapDown: (_) {
-                              _handleTapDown(
-                                index,
-                                item,
-                                controller,
-                                panelState.focusedIndex,
-                              );
-                            },
-                            onSecondaryTapUp: (details) {
-                              _handleItemContextMenu(
-                                details.globalPosition,
-                                index,
-                                item,
-                                activeTabId,
-                                controller,
-                              );
-                            },
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? fimaTheme.selectedItemColor
-                                    : isFocused && isActivePanel
-                                    ? fimaTheme.focusedItemColor
-                                    : fimaTheme.backgroundColor,
-                                border: isDropTarget
-                                    ? Border.all(
-                                        color: fimaTheme.accentColor,
-                                        width: 2,
-                                      )
-                                    : isFocused && isActivePanel
-                                    ? Border.all(
-                                        color: fimaTheme.accentColor,
-                                        width: 1,
-                                      )
-                                    : null,
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              child: LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final iconWidth = fontSize + 10;
-                                  final availableWidth =
-                                      constraints.maxWidth -
-                                      iconWidth -
-                                      _splitterWidth * 2;
-                                  final sizeWidth =
-                                      availableWidth * _sizeWidthFraction;
-                                  final modifiedWidth =
-                                      availableWidth *
-                                      (1.0 -
-                                          _nameWidthFraction -
-                                          _sizeWidthFraction);
-
-                                  return Row(
-                                    children: [
-                                      SizedBox(
-                                        width: iconWidth,
-                                        child: _buildFileIcon(
-                                          item,
-                                          fontSize + 2,
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child:
-                                            item.path == panelState.editingPath
-                                            ? RenameField(
-                                                initialValue: item.name,
-                                                style: theme.textTheme.bodySmall
-                                                    ?.copyWith(
-                                                      color: textColor,
-                                                      fontSize: fontSize,
-                                                    ),
-                                                onSubmitted: (newName) {
-                                                  controller.renameItem(
-                                                    newName,
-                                                  );
-                                                },
-                                                onCancel: () {
-                                                  controller.cancelRenaming();
-                                                },
-                                              )
-                                            : Text(
-                                                item.name,
-                                                style: theme.textTheme.bodySmall
-                                                    ?.copyWith(
-                                                      color: textColor,
-                                                      fontSize: fontSize,
-                                                    ),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                      ),
-                                      SizedBox(width: _splitterWidth),
-                                      SizedBox(
-                                        width: sizeWidth,
-                                        child: Text(
-                                          item.isParentDetails
-                                              ? ''
-                                              : item.isDirectory
-                                              ? panelState
-                                                        .calculatingDirectories
-                                                        .contains(item.path)
-                                                    ? '...'
-                                                    : panelState.directorySizes
-                                                          .containsKey(
-                                                            item.path,
-                                                          )
-                                                    ? _formatSize(
-                                                        panelState
-                                                            .directorySizes[item
-                                                            .path]!,
-                                                      )
-                                                    : '<DIR>'
-                                              : _formatSize(item.size),
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                                color: textColor,
-                                                fontSize: fontSize,
-                                              ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      SizedBox(width: _splitterWidth),
-                                      SizedBox(
-                                        width: modifiedWidth,
-                                        child: Text(
-                                          item.isParentDetails
-                                              ? ''
-                                              : _dateFormat.format(
-                                                  item.modified,
-                                                ),
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                                color: textColor,
-                                                fontSize: fontSize,
-                                              ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                },
-                              ),
-                            ),
-                          );
-
-                          if (item.isDirectory && !item.isParentDetails) {
-                            itemRow = DropTargetFolder(
-                              folderPath: item.path,
-                              onDrop: _handleDrop,
-                              child: itemRow,
-                            );
-                          }
-                          return DraggableFileItem(
+                          return PanelFileRow(
                             item: item,
                             panelState: panelState,
                             panelId: widget.panelId,
                             tabId: activeTabId,
-                            child: itemRow,
+                            fimaTheme: fimaTheme,
+                            fontSize: fontSize,
+                            isSelected: isSelected,
+                            isFocused: isFocused,
+                            isActivePanel: isActivePanel,
+                            isDropTarget: isDropTarget,
+                            nameWidthFraction: _nameWidthFraction,
+                            sizeWidthFraction: _sizeWidthFraction,
+                            splitterWidth: _splitterWidth,
+                            dateFormat: _dateFormat,
+                            onTapDown: () => _handleTapDown(
+                              index,
+                              item,
+                              controller,
+                              panelState.focusedIndex,
+                            ),
+                            onSecondaryTap: (pos) => _handleItemContextMenu(
+                              pos,
+                              index,
+                              item,
+                              activeTabId,
+                              controller,
+                            ),
+                            onRenameSubmitted: controller.renameItem,
+                            onRenameCancelled: controller.cancelRenaming,
+                            onDrop: _handleDrop,
                           );
                         },
                       ),
                     ),
                   ),
                 ),
-                // QuickFilter input box
                 if (panelState.quickFilterText.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: fimaTheme.surfaceColor,
-                      border: Border(
-                        top: BorderSide(color: fimaTheme.borderColor),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.search,
-                          size: fontSize + 2,
-                          color: fimaTheme.accentColor,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          panelState.quickFilterText,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontSize: fontSize,
-                            color: fimaTheme.textColor,
-                          ),
-                        ),
-                      ],
-                    ),
+                  PanelQuickFilterBar(
+                    filterText: panelState.quickFilterText,
+                    fimaTheme: fimaTheme,
+                    fontSize: fontSize,
                   ),
-                // Operation Progress Bar
                 if (panelState.operationProgress != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: fimaTheme.surfaceColor,
-                      border: Border(
-                        top: BorderSide(color: fimaTheme.borderColor),
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${panelState.operationProgress!.operationName}: ${panelState.operationProgress!.currentItem}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontSize: fontSize - 1,
-                            color: fimaTheme.textColor,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: LinearProgressIndicator(
-                                value: panelState.operationProgress!.progress,
-                                minHeight: 2,
-                                backgroundColor: fimaTheme.surfaceColor,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  fimaTheme.accentColor,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                  PanelOperationProgressBar(
+                    progress: panelState.operationProgress!,
+                    fimaTheme: fimaTheme,
+                    fontSize: fontSize,
                   ),
               ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PathBreadcrumb {
-  final String label;
-  final String targetPath;
-
-  const _PathBreadcrumb({required this.label, required this.targetPath});
-}
-
-class _BreadcrumbChip extends StatefulWidget {
-  final String label;
-  final bool isCurrent;
-  final double fontSize;
-  final FimaTheme fimaTheme;
-  final VoidCallback onTap;
-
-  const _BreadcrumbChip({
-    required this.label,
-    required this.isCurrent,
-    required this.fontSize,
-    required this.fimaTheme,
-    required this.onTap,
-  });
-
-  @override
-  State<_BreadcrumbChip> createState() => _BreadcrumbChipState();
-}
-
-class _BreadcrumbChipState extends State<_BreadcrumbChip> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          decoration: BoxDecoration(
-            color: _hovered
-                ? widget.fimaTheme.accentColor.withValues(alpha: 0.14)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text(
-            widget.label,
-            style: TextStyle(
-              fontSize: widget.fontSize,
-              fontWeight: widget.isCurrent
-                  ? FontWeight.w600
-                  : FontWeight.normal,
-              color: _hovered
-                  ? widget.fimaTheme.accentColor
-                  : widget.isCurrent
-                  ? widget.fimaTheme.textColor
-                  : widget.fimaTheme.secondaryTextColor,
             ),
           ),
         ),

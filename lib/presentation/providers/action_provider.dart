@@ -1,37 +1,16 @@
-import 'dart:io';
-
-import 'package:fima/domain/entity/app_action.dart';
-import 'package:fima/domain/entity/file_system_item.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:fima/domain/entity/key_map_action.dart';
-import 'package:fima/domain/entity/workspace.dart';
-import 'package:fima/domain/utils/fima_path.dart';
-import 'package:fima/infrastructure/service/application_service.dart';
-import 'package:fima/infrastructure/service/system_clipboard_service.dart';
-import 'package:fima/presentation/providers/clipboard_actions.dart';
-import 'package:fima/presentation/providers/file_system_provider.dart';
-import 'package:fima/presentation/providers/focus_provider.dart';
-import 'package:fima/presentation/providers/operation_status_provider.dart';
-import 'package:fima/presentation/providers/overlay_provider.dart';
-import 'package:fima/presentation/providers/panel_feature_actions.dart';
-import 'package:fima/presentation/providers/panel_tabs_provider.dart';
-import 'package:fima/presentation/providers/settings_provider.dart';
-import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart';
-import 'package:fima/presentation/widgets/popups/connect_server_dialog.dart';
-import 'package:fima/presentation/widgets/popups/delete_confirmation_dialog.dart';
-import 'package:fima/presentation/widgets/popups/file_preview_dialog.dart';
-import 'package:fima/presentation/widgets/popups/item_info_dialog.dart';
-import 'package:fima/presentation/widgets/popups/omni_dialog.dart';
-import 'package:fima/presentation/widgets/popups/shortcuts_dialog.dart';
-import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-final appActionsProvider = Provider<List<AppAction>>((ref) {
-  return [];
-});
+import 'package:fima/domain/entity/app_action.dart';
+import 'package:fima/domain/entity/key_map_action.dart';
+import 'package:fima/presentation/providers/app_action_dispatcher.dart';
+import 'package:fima/presentation/providers/file_system_provider.dart';
+import 'package:fima/presentation/providers/focus_provider.dart';
+import 'package:fima/presentation/providers/panel_tabs_provider.dart';
+import 'package:fima/presentation/providers/settings_provider.dart';
 
+/// Generates Omni-panel executable [AppAction] entries based on keymap
+/// definitions and the active panel's focused item context.
 class ActionGenerator {
   final WidgetRef ref;
   final BuildContext context;
@@ -39,19 +18,15 @@ class ActionGenerator {
   ActionGenerator(this.context, this.ref);
 
   List<AppAction> generate() {
-    final focusController = ref.read(focusProvider.notifier);
-    final activePanelId = focusController.getActivePanelId();
+    final activePanelId = ref.read(focusProvider.notifier).getActivePanelId();
     final activeTabId = ref.read(panelTabsProvider(activePanelId)).activeTabId;
-    final panelController = ref.read(panelStateProvider(activeTabId).notifier);
-
     final settingsNotifier = ref.read(userSettingsProvider.notifier);
-
     final panelState = ref.read(panelStateProvider(activeTabId));
+
     bool isZipFocused = false;
     if (panelState.focusedIndex >= 0 &&
         panelState.focusedIndex < panelState.items.length) {
       final focusedItem = panelState.items[panelState.focusedIndex];
-      // A zip file itself (not inside another zip or directory) might just end with .zip
       if (focusedItem.path.toLowerCase().endsWith('.zip') &&
           !focusedItem.isDirectory &&
           !focusedItem.isParentDetails) {
@@ -64,12 +39,7 @@ class ActionGenerator {
         id: action.id,
         label: action.label,
         shortcut: settingsNotifier.getEffectiveShortcut(action.id),
-        callback: () => _executeAction(
-          action.id,
-          activePanelId,
-          activeTabId,
-          panelController,
-        ),
+        callback: () => AppActionDispatcher.dispatch(context, ref, action.id),
       );
     }).toList();
 
@@ -88,11 +58,10 @@ class ActionGenerator {
             shortcut: settingsNotifier.getEffectiveShortcut(
               extractOppositeAction.id,
             ),
-            callback: () => _executeAction(
+            callback: () => AppActionDispatcher.dispatch(
+              context,
+              ref,
               extractOppositeAction.id,
-              activePanelId,
-              activeTabId,
-              panelController,
             ),
           ),
         );
@@ -104,11 +73,10 @@ class ActionGenerator {
             shortcut: settingsNotifier.getEffectiveShortcut(
               extractHereAction.id,
             ),
-            callback: () => _executeAction(
+            callback: () => AppActionDispatcher.dispatch(
+              context,
+              ref,
               extractHereAction.id,
-              activePanelId,
-              activeTabId,
-              panelController,
             ),
           ),
         );
@@ -116,495 +84,5 @@ class ActionGenerator {
     }
 
     return actions;
-  }
-
-  void _executeAction(
-    String actionId,
-    String activePanelId,
-    String activeTabId,
-    dynamic panelController,
-  ) {
-    final panelState = ref.read(panelStateProvider(activeTabId));
-
-    switch (actionId) {
-      case 'extractHere':
-        _extractZip(
-          activePanelId,
-          activeTabId,
-          panelController,
-          extractToOpposite: false,
-        );
-        break;
-      case 'extractToOpposite':
-        _extractZip(
-          activePanelId,
-          activeTabId,
-          panelController,
-          extractToOpposite: true,
-        );
-        break;
-      case 'filePreview':
-        _showFilePreview(activeTabId, context);
-        break;
-      case 'showInfo':
-        _showItemInfo(activeTabId, context);
-        break;
-      case 'saveBookmark':
-        PanelFeatureActions.promptSaveBookmark(context, ref);
-        break;
-      case 'bookmarkDialog':
-        showDialog(
-          context: context,
-          barrierColor: Colors.transparent,
-          builder: (context) => const OmniDialog(initialText: 'b '),
-        );
-        break;
-      case 'calculateDirectorySizes':
-        panelController.calculateAllDirectorySizes();
-        break;
-      case 'compareFiles':
-        PanelFeatureActions.openCompareFiles(context, ref);
-        break;
-      case 'editPermissions':
-        PanelFeatureActions.openEditPermissions(context, ref);
-        break;
-      case 'compress':
-        _compressItems(activeTabId, panelController, context);
-        break;
-      case 'copyOperation':
-        ref.read(operationStatusProvider.notifier).startCopy();
-        break;
-      case 'moveOperation':
-        ref.read(operationStatusProvider.notifier).startMove();
-        break;
-      case 'createDirectory':
-        if (panelState.currentPath.isEmpty) return;
-        showDialog(
-          context: context,
-          barrierColor: Colors.transparent,
-          builder: (context) => const TextInputDialog(
-            title: 'Create Directory',
-            label: 'Directory Name',
-            okButtonLabel: 'Create',
-          ),
-        ).then((name) {
-          if (name != null && name.toString().isNotEmpty) {
-            panelController.createDirectory(name.toString());
-          }
-        });
-        break;
-      case 'createFile':
-        if (panelState.currentPath.isEmpty) return;
-        showDialog(
-          context: context,
-          barrierColor: Colors.transparent,
-          builder: (context) => const TextInputDialog(
-            title: 'Create File',
-            label: 'File Name',
-            okButtonLabel: 'Create',
-          ),
-        ).then((name) {
-          if (name != null && name.toString().isNotEmpty) {
-            panelController.createFile(name.toString());
-          }
-        });
-        break;
-      case 'rename':
-        panelController.startRenaming();
-        break;
-      case 'deleteToTrash':
-        panelController.deleteSelectedItems(permanent: false);
-        break;
-      case 'goToTrash':
-        _navigateToTrash(activePanelId, panelController);
-        break;
-      case 'permanentDelete':
-        _showDeleteConfirmation(activeTabId, panelController, permanent: true);
-        break;
-      case 'selectAll':
-        panelController.selectAll();
-        break;
-      case 'toggleHiddenFiles':
-        ref.read(userSettingsProvider.notifier).toggleShowHiddenFiles();
-        break;
-      case 'openTerminal':
-        if (panelState.currentPath.isNotEmpty &&
-            !FimaPath.isSshPath(panelState.currentPath) &&
-            !FimaPath.isZipPath(panelState.currentPath)) {
-          final useBuiltIn = ref.read(userSettingsProvider).useBuiltInTerminal;
-          if (useBuiltIn) {
-            final focusState = ref.read(focusProvider);
-            final isLeftPanel = focusState.activePanel == ActivePanel.left;
-            ref
-                .read(overlayProvider.notifier)
-                .showTerminal(
-                  isLeftPanel,
-                  panelState.currentPath,
-                  tabId: activeTabId,
-                );
-          } else {
-            panelController.openTerminal(panelState.currentPath);
-          }
-        }
-        break;
-      case 'openDefaultManager':
-        if (panelState.currentPath.isNotEmpty) {
-          panelController.openFileManager(panelState.currentPath);
-        }
-        break;
-      case 'openWith':
-        _openWithApplication(panelState, panelController);
-        break;
-      case 'copyPath':
-        _copyPathToClipboard(panelState);
-        break;
-      case 'copyToClipboard':
-        ref
-            .read(clipboardActionsProvider)
-            .copyOrCut(activeTabId, ClipboardOperation.copy);
-        break;
-      case 'cutToClipboard':
-        ref
-            .read(clipboardActionsProvider)
-            .copyOrCut(activeTabId, ClipboardOperation.cut);
-        break;
-      case 'pasteFromClipboard':
-        ref.read(clipboardActionsProvider).paste(activeTabId);
-        break;
-      case 'moveUp':
-        panelController.moveSelectionUp();
-        break;
-      case 'moveDown':
-        panelController.moveSelectionDown();
-        break;
-      case 'jumpToTop':
-        panelController.moveToFirst();
-        break;
-      case 'jumpToBottom':
-        panelController.moveToLast();
-        break;
-      case 'deselectAll':
-        panelController.deselectAll();
-        break;
-      case 'settings':
-        final focusState = ref.read(focusProvider);
-        final isLeftPanel = focusState.activePanel == ActivePanel.left;
-        ref.read(overlayProvider.notifier).showSettings(isLeftPanel);
-        break;
-      case 'connectToServer':
-        showDialog(
-          context: context,
-          barrierColor: Colors.black54,
-          builder: (context) => const ConnectServerDialog(),
-        );
-        break;
-      case 'remoteDialog':
-        showDialog(
-          context: context,
-          barrierColor: Colors.transparent,
-          builder: (context) => const OmniDialog(initialText: 'r '),
-        );
-        break;
-      case 'editPath':
-        panelController.startEditingPath();
-        break;
-      case 'saveWorkspace':
-        _showSaveWorkspaceDialog();
-        break;
-      case 'workspaceDialog':
-        showDialog(
-          context: context,
-          barrierColor: Colors.transparent,
-          builder: (context) => const OmniDialog(initialText: 'w '),
-        );
-        break;
-      case 'clearQuickFilter':
-        panelController.clearQuickFilter();
-        break;
-      case 'showShortcuts':
-        showDialog(
-          context: context,
-          barrierColor: Colors.black54,
-          builder: (context) => const ShortcutsDialog(),
-        );
-        break;
-      case 'newTab':
-        ref.read(panelTabsProvider(activePanelId).notifier).createTab();
-        break;
-      case 'closeTab':
-        ref.read(panelTabsProvider(activePanelId).notifier).closeActiveTab();
-        break;
-      case 'nextTab':
-        ref.read(panelTabsProvider(activePanelId).notifier).nextTab();
-        break;
-      case 'previousTab':
-        ref.read(panelTabsProvider(activePanelId).notifier).previousTab();
-        break;
-    }
-  }
-
-  void _navigateToTrash(String activePanelId, dynamic panelController) async {
-    final overlayNotifier = ref.read(overlayProvider.notifier);
-    String? systemTrashPath;
-
-    if (Platform.isMacOS) {
-      final home = Platform.environment['HOME'] ?? '';
-      if (home.isNotEmpty) systemTrashPath = '$home/.Trash';
-    } else if (Platform.isLinux) {
-      final home = Platform.environment['HOME'] ?? '';
-      if (home.isNotEmpty) {
-        systemTrashPath = '$home/.local/share/Trash/files';
-      }
-    } else if (Platform.isWindows) {
-      final systemDrive =
-          Platform.environment['SystemDrive'] ??
-          Platform.environment['HOMEDRIVE'] ??
-          'C:';
-      systemTrashPath = '$systemDrive\\\$Recycle.Bin';
-    }
-
-    // Check if the system trash exists; otherwise use app-specific fallback
-    if (systemTrashPath != null && await Directory(systemTrashPath).exists()) {
-      panelController.loadPath(systemTrashPath);
-    } else {
-      // Fall back to the app-support trash folder (mirrors moveToTrash fallback)
-      try {
-        final appSupportDir = await getApplicationSupportDirectory();
-        final fallbackTrash = '${appSupportDir.path}/Trash';
-        final fallbackDir = Directory(fallbackTrash);
-        if (!await fallbackDir.exists()) {
-          await fallbackDir.create(recursive: true);
-        }
-        panelController.loadPath(fallbackTrash);
-      } catch (e) {
-        overlayNotifier.showToast('Could not locate Trash folder');
-      }
-    }
-  }
-
-  void _showDeleteConfirmation(
-    String activeTabId,
-    dynamic panelController, {
-    required bool permanent,
-  }) {
-    final panelState = ref.read(panelStateProvider(activeTabId));
-    int count = panelState.selectedItems.length;
-    if (count == 0 &&
-        panelState.focusedIndex >= 0 &&
-        panelState.focusedIndex < panelState.items.length &&
-        !panelState.items[panelState.focusedIndex].isParentDetails) {
-      count = 1;
-    }
-
-    if (count > 0) {
-      showDialog(
-        context: context,
-        barrierColor: Colors.transparent,
-        builder: (context) => DeleteConfirmationDialog(count: count),
-      ).then((confirmed) {
-        if (confirmed == true) {
-          panelController.deleteSelectedItems(permanent: permanent);
-        }
-      });
-    }
-  }
-
-  void _openWithApplication(dynamic panelState, dynamic panelController) {
-    String? targetPath;
-
-    if (panelState.selectedItems.isNotEmpty) {
-      targetPath = panelState.selectedItems.first;
-    } else if (panelState.focusedIndex >= 0 &&
-        panelState.focusedIndex < panelState.items.length &&
-        !panelState.items[panelState.focusedIndex].isParentDetails) {
-      targetPath = panelState.items[panelState.focusedIndex].path;
-    }
-
-    if (targetPath == null || targetPath.isEmpty) return;
-
-    final appService = ApplicationService();
-    final applications = appService.getInstalledApplications();
-
-    if (!context.mounted) return;
-
-    ApplicationPickerDialog.show(context, applications).then((selectedApp) {
-      if (selectedApp != null) {
-        panelController.openWithApplication(selectedApp, targetPath!);
-      }
-    });
-  }
-
-  void _copyPathToClipboard(dynamic panelState) {
-    String? targetPath;
-
-    if (panelState.focusedIndex >= 0 &&
-        panelState.focusedIndex < panelState.items.length) {
-      final item = panelState.items[panelState.focusedIndex];
-      if (!item.isParentDetails) {
-        targetPath = item.path;
-      }
-    }
-
-    if (targetPath != null && targetPath.isNotEmpty) {
-      Clipboard.setData(ClipboardData(text: targetPath));
-      ref.read(overlayProvider.notifier).showToast('Path copied: $targetPath');
-    }
-  }
-
-  void _extractZip(
-    String activePanelId,
-    String activeTabId,
-    dynamic panelController, {
-    required bool extractToOpposite,
-  }) {
-    final panelState = ref.read(panelStateProvider(activeTabId));
-    if (panelState.focusedIndex >= 0 &&
-        panelState.focusedIndex < panelState.items.length) {
-      final item = panelState.items[panelState.focusedIndex];
-      if (item.path.toLowerCase().endsWith('.zip')) {
-        String destinationPath;
-        dynamic refreshController;
-
-        if (extractToOpposite) {
-          final oppositePanelId = activePanelId == 'left' ? 'right' : 'left';
-          final oppositeTabId = ref
-              .read(panelTabsProvider(oppositePanelId))
-              .activeTabId;
-          destinationPath = ref
-              .read(panelStateProvider(oppositeTabId))
-              .currentPath;
-          // Capture the opposite tab controller now, before the dialog closes
-          refreshController = ref.read(
-            panelStateProvider(oppositeTabId).notifier,
-          );
-        } else {
-          destinationPath = panelState.currentPath;
-          refreshController = panelController;
-        }
-
-        panelController.extractArchive(item.path, destinationPath).then((_) {
-          refreshController.refresh();
-        });
-      }
-    }
-  }
-
-  void _showFilePreview(String activeTabId, BuildContext context) {
-    final panelState = ref.read(panelStateProvider(activeTabId));
-    if (panelState.focusedIndex >= 0 &&
-        panelState.focusedIndex < panelState.items.length) {
-      final item = panelState.items[panelState.focusedIndex];
-      if (!item.isDirectory && !item.isParentDetails) {
-        showFilePreviewDialog(context, item);
-      }
-    }
-  }
-
-  void _showItemInfo(String activeTabId, BuildContext context) {
-    final panelState = ref.read(panelStateProvider(activeTabId));
-    List<FileSystemItem> targetItems = panelState.items
-        .where(
-          (item) =>
-              panelState.selectedItems.contains(item.path) &&
-              !item.isParentDetails,
-        )
-        .toList();
-
-    if (targetItems.isEmpty &&
-        panelState.focusedIndex >= 0 &&
-        panelState.focusedIndex < panelState.items.length) {
-      final focused = panelState.items[panelState.focusedIndex];
-      if (!focused.isParentDetails) {
-        targetItems = [focused];
-      }
-    }
-
-    if (targetItems.isNotEmpty) {
-      showItemInfoDialog(
-        context,
-        items: targetItems,
-        currentPath: panelState.currentPath,
-      );
-    }
-  }
-
-  void _compressItems(
-    String activeTabId,
-    dynamic panelController,
-    BuildContext context,
-  ) {
-    final panelState = ref.read(panelStateProvider(activeTabId));
-    List<String> paths = panelState.selectedItems.toList();
-
-    if (paths.isEmpty) {
-      if (panelState.focusedIndex >= 0 &&
-          panelState.focusedIndex < panelState.items.length) {
-        final item = panelState.items[panelState.focusedIndex];
-        if (!item.isParentDetails) {
-          paths.add(item.path);
-        }
-      }
-    }
-
-    if (paths.isEmpty) return;
-
-    if (paths.length == 1) {
-      // Single item: compress directly using its name
-      final itemName = FimaPath.basename(paths.first);
-      final zipName = '$itemName.zip';
-      panelController.compressItems(paths, zipName).then((_) {
-        panelController.refresh();
-      });
-    } else {
-      // Multiple items: ask for name
-      showDialog(
-        context: context,
-        barrierColor: Colors.transparent,
-        builder: (context) => const TextInputDialog(
-          title: 'Compress Items',
-          label: 'Archive Name (e.g. archive.zip)',
-          okButtonLabel: 'Compress',
-        ),
-      ).then((name) {
-        if (name != null && name.toString().isNotEmpty) {
-          String zipName = name.toString();
-          if (!zipName.toLowerCase().endsWith('.zip')) {
-            zipName += '.zip';
-          }
-          panelController.compressItems(paths, zipName).then((_) {
-            panelController.refresh();
-          });
-        }
-      });
-    }
-  }
-
-  void _showSaveWorkspaceDialog() {
-    final leftTabsState = ref.read(panelTabsProvider('left'));
-    final rightTabsState = ref.read(panelTabsProvider('right'));
-    // Capture the notifier before opening the dialog, as the caller's WidgetRef
-    // (e.g. OmniDialog) may be disposed before the user submits the dialog.
-    final settingsNotifier = ref.read(userSettingsProvider.notifier);
-
-    showDialog(
-      context: context,
-      barrierColor: Colors.transparent,
-      builder: (context) => const TextInputDialog(
-        title: 'Save Workspace',
-        label: 'Workspace Name',
-        okButtonLabel: 'Save',
-      ),
-    ).then((name) {
-      if (name != null && name.toString().isNotEmpty) {
-        final workspace = Workspace(
-          name: name.toString(),
-          leftTabs: leftTabsState.tabs,
-          leftActiveTabIndex: leftTabsState.activeTabIndex,
-          rightTabs: rightTabsState.tabs,
-          rightActiveTabIndex: rightTabsState.activeTabIndex,
-        );
-        settingsNotifier.addWorkspace(workspace);
-      }
-    });
   }
 }

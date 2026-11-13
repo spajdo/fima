@@ -1,28 +1,38 @@
-import 'package:fima/domain/entity/file_system_item.dart';
-import 'package:fima/domain/entity/panel_state.dart';
-import 'package:fima/domain/repository/file_system_repository.dart';
-import 'package:fima/domain/utils/fima_path.dart';
-import 'package:fima/infrastructure/repository/local_file_system_repository.dart';
-import 'package:fima/presentation/providers/panel_tabs_provider.dart';
-import 'package:fima/presentation/providers/settings_provider.dart';
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:open_file/open_file.dart';
 import 'package:path/path.dart' as p;
-import 'dart:io';
-import 'dart:async';
-import 'dart:isolate';
 
-import 'package:archive/archive_io.dart';
 import 'package:fima/domain/entity/desktop_application.dart';
-import 'package:fima/domain/entity/panel_operation_progress.dart';
+import 'package:fima/domain/entity/file_system_item.dart';
+import 'package:fima/domain/entity/panel_state.dart';
 import 'package:fima/domain/entity/remote_connection.dart';
-
+import 'package:fima/domain/repository/file_system_repository.dart';
+import 'package:fima/domain/utils/file_item_sorter.dart';
+import 'package:fima/domain/utils/fima_path.dart';
 import 'package:fima/infrastructure/repository/compound_file_system_repository.dart';
+import 'package:fima/infrastructure/repository/local_file_system_repository.dart';
+import 'package:fima/infrastructure/service/archive_service.dart';
+import 'package:fima/infrastructure/service/desktop_integration_service.dart';
 import 'package:fima/infrastructure/service/item_metadata_service.dart';
+import 'package:fima/infrastructure/service/remote_file_edit_service.dart';
+import 'package:fima/presentation/providers/panel_tabs_provider.dart';
+import 'package:fima/presentation/providers/settings_provider.dart';
 
 final fileSystemRepositoryProvider = Provider<FileSystemRepository>((ref) {
   return CompoundFileSystemRepository(LocalFileSystemRepository());
+});
+
+final archiveServiceProvider = Provider<ArchiveService>((ref) {
+  return const ArchiveService();
+});
+
+final desktopIntegrationServiceProvider = Provider<DesktopIntegrationService>((
+  ref,
+) {
+  return const DesktopIntegrationService();
 });
 
 final panelStateProvider =
@@ -45,9 +55,13 @@ class PanelController extends StateNotifier<PanelState> {
   bool? _loadedShowHiddenFiles;
   List<FileSystemItem> _allItems = [];
   int _loadGeneration = 0;
+  final RemoteFileEditService _remoteEditService;
 
   PanelController(this._repository, this._ref, this._tabId)
-    : super(const PanelState());
+    : _remoteEditService = RemoteFileEditService(
+        _ref.read(desktopIntegrationServiceProvider),
+      ),
+      super(const PanelState());
 
   bool get needsHiddenFilesRefresh =>
       _loadedShowHiddenFiles != null &&
@@ -300,9 +314,6 @@ class PanelController extends StateNotifier<PanelState> {
     }
   }
 
-  // We need to keep a reference to active file watchers so we can dispose them
-  final Map<String, StreamSubscription> _activeFileWatchers = {};
-
   void enterFocusedItem() {
     if (state.items.isEmpty || state.focusedIndex >= state.items.length) return;
     final item = state.items[state.focusedIndex];
@@ -314,105 +325,16 @@ class PanelController extends StateNotifier<PanelState> {
       } else {
         loadPath(item.path, addToVisited: true);
       }
-    } else if (item.path.startsWith('ssh://')) {
-      _openRemoteFileLocally(item.path);
+    } else if (FimaPath.isSshPath(item.path)) {
+      _remoteEditService.openRemoteFileLocally(_repository, item.path);
     } else {
-      OpenFile.open(item.path);
-    }
-  }
-
-  /// Downloads a remote SSH file to a local temp dir and opens it with the
-  /// system default application (e.g. VS Code for .log / .txt files).
-  /// Also starts a background tail worker that polls the remote file every
-  /// 2 seconds and appends new bytes to the local copy so the editor
-  /// auto-reloads when the remote file grows.
-  /// If the user modifies the local file, it triggers an upload back to the remote server.
-  Future<void> _openRemoteFileLocally(String sshPath) async {
-    try {
-      final compound = _repository;
-      if (compound is! CompoundFileSystemRepository) return;
-
-      final connId = RemoteConnection.connectionIdFromSshUrl(sshPath);
-      final remotePath = RemoteConnection.remotePathFromSshUrl(sshPath);
-      final fileName = remotePath.split('/').last;
-
-      // Build a stable temp path that mirrors the remote structure.
-      final tmpDir = Directory(
-        '/tmp/fima_ssh/$connId${remotePath.substring(0, remotePath.length - fileName.length)}',
-      );
-      await tmpDir.create(recursive: true);
-
-      final localPath = '${tmpDir.path}$fileName';
-      final file = File(localPath);
-
-      // Cancel existing watcher if any
-      await _activeFileWatchers[sshPath]?.cancel();
-      _activeFileWatchers.remove(sshPath);
-
-      // Download the initial snapshot and get its byte length.
-      var currentSize = await compound.sshRepository.downloadToLocal(
-        sshPath,
-        localPath,
-      );
-
-      final sftp = compound.sshRepository.getSftpClientFor(connId);
-      if (sftp == null) return;
-
-      // Start live-tail: poll every 2 s, append new bytes to local file.
-      void startTailing() {
-        compound.sshRepository.tailService.startTailing(
-          sftp: sftp,
-          sshPath: sshPath,
-          remotePath: remotePath,
-          localPath: localPath,
-          initialSize: currentSize,
-        );
-      }
-
-      startTailing();
-
-      // Watch local file for user modifications
-      bool isUploading = false;
-
-      final watcher = file.watch().listen((event) async {
-        if (isUploading) return;
-
-        // Wait a tiny bit to debounce rapid save events from editors
-        await Future.delayed(const Duration(milliseconds: 100));
-
-        try {
-          // Suspend tailing while we upload
-          isUploading = true;
-          compound.sshRepository.tailService.stopTailing(sshPath);
-
-          // Upload the file back to the remote server
-          debugPrint('Local file edited, uploading to remote: $sshPath');
-          await compound.sshRepository.uploadFromLocal(localPath, sshPath);
-
-          // Re-measure after upload and resume tailing
-          currentSize = await file.length();
-          startTailing();
-        } catch (e) {
-          debugPrint('Error uploading edited file: $e');
-        } finally {
-          isUploading = false;
-        }
-      });
-      _activeFileWatchers[sshPath] = watcher;
-
-      // Open in the system default app — VS Code for text/log files.
-      await OpenFile.open(localPath);
-    } catch (e) {
-      debugPrint('Error opening remote file locally: $e');
+      _ref.read(desktopIntegrationServiceProvider).openFile(item.path);
     }
   }
 
   @override
   void dispose() {
-    for (var watcher in _activeFileWatchers.values) {
-      watcher.cancel();
-    }
-    _activeFileWatchers.clear();
+    _remoteEditService.dispose();
     super.dispose();
   }
 
@@ -427,21 +349,11 @@ class PanelController extends StateNotifier<PanelState> {
     final compound = _repository;
     if (compound is! CompoundFileSystemRepository) return;
 
-    // Auto-stop all file tailing for all connections on disconnect
-    // Usually disconnectSsh handles the active connection for this panel.
     final currentPath = state.currentPath;
-    if (currentPath.startsWith('ssh://')) {
+    if (FimaPath.isSshPath(currentPath)) {
       final connId = RemoteConnection.connectionIdFromSshUrl(currentPath);
       compound.sshRepository.disconnect(connId);
-
-      // Also stop active watchers for this connection
-      final keysToRemove = _activeFileWatchers.keys
-          .where((k) => k.startsWith('ssh://$connId'))
-          .toList();
-      for (final k in keysToRemove) {
-        _activeFileWatchers[k]?.cancel();
-        _activeFileWatchers.remove(k);
-      }
+      _remoteEditService.disposeForConnection(connId);
     }
 
     final homeDir =
@@ -529,33 +441,15 @@ class PanelController extends StateNotifier<PanelState> {
   }
 
   void setQuickFilter(String text) {
-    final lowerText = text.toLowerCase();
-    final filtered = _allItems.where((item) {
-      if (item.isParentDetails) return true;
-      return item.name.toLowerCase().startsWith(lowerText);
-    }).toList();
-
-    // Find best match: exact match first, then shortest name
-    int bestIndex = -1;
-    int bestLength = -1;
-    for (int i = 0; i < filtered.length; i++) {
-      final item = filtered[i];
-      if (item.isParentDetails) continue;
-      final lowerName = item.name.toLowerCase();
-      if (lowerName == lowerText) {
-        bestIndex = i;
-        break;
-      }
-      if (bestIndex == -1 || item.name.length < bestLength) {
-        bestIndex = i;
-        bestLength = item.name.length;
-      }
-    }
+    final (filtered, resolvedIndex) = FileItemSorter.filterByPrefix(
+      _allItems,
+      text,
+    );
 
     state = state.copyWith(
       quickFilterText: text,
       items: filtered,
-      focusedIndex: bestIndex >= 0 ? bestIndex : (filtered.isNotEmpty ? 0 : -1),
+      focusedIndex: resolvedIndex,
     );
   }
 
@@ -581,36 +475,12 @@ class PanelController extends StateNotifier<PanelState> {
     bool ascending, {
     Map<String, int> directorySizes = const {},
   }) {
-    final parentItem = items.where((i) => i.isParentDetails).toList();
-    final directories = items
-        .where((i) => i.isDirectory && !i.isParentDetails)
-        .toList();
-    final files = items
-        .where((i) => !i.isDirectory && !i.isParentDetails)
-        .toList();
-
-    int compare(FileSystemItem a, FileSystemItem b) {
-      int result;
-      switch (column) {
-        case SortColumn.name:
-          result = a.name.toLowerCase().compareTo(b.name.toLowerCase());
-          break;
-        case SortColumn.size:
-          final aSize = a.isDirectory ? (directorySizes[a.path] ?? -1) : a.size;
-          final bSize = b.isDirectory ? (directorySizes[b.path] ?? -1) : b.size;
-          result = aSize.compareTo(bSize);
-          break;
-        case SortColumn.modified:
-          result = a.modified.compareTo(b.modified);
-          break;
-      }
-      return ascending ? result : -result;
-    }
-
-    directories.sort(compare);
-    files.sort(compare);
-
-    return [...parentItem, ...directories, ...files];
+    return FileItemSorter.sortItems(
+      items,
+      column,
+      ascending,
+      directorySizes: directorySizes,
+    );
   }
 
   // Keyboard navigation methods
@@ -878,43 +748,14 @@ class PanelController extends StateNotifier<PanelState> {
   }
 
   Future<void> extractArchive(String zipPath, String destinationPath) async {
-    if (FimaPath.isSshPath(zipPath) ||
-        FimaPath.isSshPath(destinationPath) ||
-        FimaPath.isZipPath(destinationPath)) {
-      return;
-    }
-
-    final receivePort = ReceivePort();
     try {
-      await Isolate.spawn(_isolateExtractArchive, {
-        'sendPort': receivePort.sendPort,
-        'zipPath': zipPath,
-        'destinationPath': destinationPath,
-      });
-
-      await for (final message in receivePort) {
-        if (message == null) {
-          // Completion
-          break;
-        } else if (message is Map<String, dynamic>) {
-          if (message.containsKey('error')) {
-            debugPrint('Error extracting zip: ${message['error']}');
-            break;
-          } else {
-            state = state.copyWith(
-              operationProgress: PanelOperationProgress(
-                operationName: message['operationName'],
-                progress: message['progress'],
-                currentItem: message['currentItem'],
-              ),
-            );
-          }
-        }
+      await for (final progress
+          in _ref
+              .read(archiveServiceProvider)
+              .extractArchive(zipPath, destinationPath)) {
+        state = state.copyWith(operationProgress: progress);
       }
-    } catch (e) {
-      debugPrint('Error launching isolate: $e');
     } finally {
-      receivePort.close();
       state = state.copyWith(clearOperationProgress: true);
     }
   }
@@ -923,310 +764,31 @@ class PanelController extends StateNotifier<PanelState> {
     List<String> paths,
     String destinationZipName,
   ) async {
-    if (paths.isEmpty ||
-        FimaPath.isSshPath(state.currentPath) ||
-        FimaPath.isZipPath(state.currentPath) ||
-        paths.any(
-          (pItem) => FimaPath.isSshPath(pItem) || FimaPath.isZipPath(pItem),
-        )) {
-      return;
-    }
-
-    final receivePort = ReceivePort();
     final zipPath = FimaPath.join(state.currentPath, destinationZipName);
-
     try {
-      await Isolate.spawn(_isolateCompressItems, {
-        'sendPort': receivePort.sendPort,
-        'paths': paths,
-        'zipPath': zipPath,
-        'basePath': state.currentPath,
-      });
-
-      await for (final message in receivePort) {
-        if (message == null) {
-          break;
-        } else if (message is Map<String, dynamic>) {
-          if (message.containsKey('error')) {
-            debugPrint('Error creating zip: ${message['error']}');
-            break;
-          } else {
-            state = state.copyWith(
-              operationProgress: PanelOperationProgress(
-                operationName: message['operationName'],
-                progress: message['progress'],
-                currentItem: message['currentItem'],
-              ),
-            );
-          }
-        }
+      await for (final progress
+          in _ref
+              .read(archiveServiceProvider)
+              .compressItems(paths, zipPath, state.currentPath)) {
+        state = state.copyWith(operationProgress: progress);
       }
-    } catch (e) {
-      debugPrint('Error launching isolate: $e');
     } finally {
-      receivePort.close();
       state = state.copyWith(clearOperationProgress: true);
     }
   }
 
-  Future<void> openTerminal(String path) async {
-    if (path.isEmpty || FimaPath.isSshPath(path) || FimaPath.isZipPath(path)) {
-      return;
-    }
-    // Linux generic way to open terminal
-    // Try generic emulator first, then specific ones
-    if (Platform.isLinux) {
-      try {
-        // Try x-terminal-emulator first (Debian/Ubuntu/standard alternative)
-        await Process.run('x-terminal-emulator', [], workingDirectory: path);
-      } catch (e) {
-        // Fallbacks
-        final terminals = [
-          'gnome-terminal',
-          'konsole',
-          'xfce4-terminal',
-          'mate-terminal',
-          'terminator',
-          'xterm',
-        ];
-        for (final terminal in terminals) {
-          try {
-            // Most terminals accept working directory as is or need --working-directory
-            // But Process.run workingDirectory argument usually handles it if the terminal respects cwd
-            // For gnome-terminal we might need more arguments?
-            // Process.run usually works.
-            await Process.run(terminal, [], workingDirectory: path);
-            return; // Success
-          } catch (_) {
-            // Continue to next
-          }
-        }
-        debugPrint('Could not find a supported terminal to open.');
-      }
-    } else if (Platform.isMacOS) {
-      // Mac implementation
-      try {
-        await Process.run('open', ['-a', 'Terminal', path]);
-      } catch (e) {
-        debugPrint('Error opening Mac terminal: $e');
-      }
-    } else if (Platform.isWindows) {
-      // Windows implementation
-      try {
-        await Process.run('cmd', [
-          '/K',
-          'start',
-          'cd',
-          '/d',
-          path,
-        ], runInShell: true);
-      } catch (e) {
-        debugPrint('Error opening Windows terminal: $e');
-      }
-    }
-  }
+  Future<void> openTerminal(String path) =>
+      _ref.read(desktopIntegrationServiceProvider).openTerminal(path);
 
-  Future<void> openFileManager(String path) async {
-    if (Platform.isLinux) {
-      try {
-        await Process.run('xdg-open', [path]);
-      } catch (e) {
-        debugPrint('Error opening file manager on Linux: $e');
-      }
-    } else if (Platform.isMacOS) {
-      try {
-        await Process.run('open', [path]);
-      } catch (e) {
-        debugPrint('Error opening file manager on macOS: $e');
-      }
-    } else if (Platform.isWindows) {
-      try {
-        await Process.run('explorer', [path]);
-      } catch (e) {
-        debugPrint('Error opening file manager on Windows: $e');
-      }
-    }
-  }
+  Future<void> openFileManager(String path) =>
+      _ref.read(desktopIntegrationServiceProvider).openFileManager(path);
 
-  Future<void> revealInFileManager(
-    String path, {
-    required bool isDirectory,
-  }) async {
-    if (isDirectory) {
-      await openFileManager(path);
-      return;
-    }
+  Future<void> revealInFileManager(String path, {required bool isDirectory}) =>
+      _ref
+          .read(desktopIntegrationServiceProvider)
+          .revealInFileManager(path, isDirectory: isDirectory);
 
-    if (Platform.isMacOS) {
-      try {
-        await Process.run('open', ['-R', path]);
-      } catch (e) {
-        debugPrint('Error revealing in Finder on macOS: $e');
-      }
-    } else if (Platform.isWindows) {
-      try {
-        await Process.run('explorer', ['/select,$path']);
-      } catch (e) {
-        debugPrint('Error revealing in Explorer on Windows: $e');
-      }
-    } else {
-      await openFileManager(p.dirname(path));
-    }
-  }
-
-  Future<void> openWithApplication(DesktopApplication app, String path) async {
-    if (Platform.isLinux) {
-      try {
-        final command = _buildCommand(app.exec, path);
-        await Process.start(command[0], command.sublist(1), runInShell: true);
-      } catch (e) {
-        debugPrint('Error opening with application on Linux: $e');
-      }
-    } else if (Platform.isMacOS) {
-      try {
-        await Process.run('open', ['-a', app.exec, path]);
-      } catch (e) {
-        debugPrint('Error opening with application on macOS: $e');
-      }
-    } else if (Platform.isWindows) {
-      try {
-        final command = _buildCommand(app.exec, path);
-        await Process.start(command[0], command.sublist(1), runInShell: true);
-      } catch (e) {
-        debugPrint('Error opening with application on Windows: $e');
-      }
-    }
-  }
-
-  List<String> _buildCommand(String exec, String path) {
-    final parts = exec.split(' ');
-    final result = <String>[];
-    bool pathSubstituted = false;
-    for (final part in parts) {
-      if (part.isEmpty) continue;
-      final replaced = _replaceExecParams(part, path);
-      if (replaced != part) pathSubstituted = true;
-      result.add(replaced);
-    }
-    if (!pathSubstituted) {
-      result.add(path);
-    }
-    return result;
-  }
-
-  String _replaceExecParams(String exec, String path) {
-    String result = exec;
-    final params = ['%F', '%f', '%U', '%u', '%D', '%d', '%N', '%n'];
-    for (final param in params) {
-      result = result.replaceAll(param, path);
-    }
-    return result;
-  }
-}
-
-class _FileEntry {
-  final String absolutePath;
-  final String archivePath;
-  _FileEntry(this.absolutePath, this.archivePath);
-}
-
-void _isolateExtractArchive(Map<String, dynamic> args) {
-  final sendPort = args['sendPort'] as SendPort;
-  final zipPath = args['zipPath'] as String;
-  final destinationPath = args['destinationPath'] as String;
-
-  try {
-    final bytes = File(zipPath).readAsBytesSync();
-    final archive = ZipDecoder().decodeBytes(bytes);
-
-    int totalFiles = archive.length;
-    if (totalFiles == 0) {
-      sendPort.send(null);
-      return;
-    }
-    int processedFiles = 0;
-
-    for (final file in archive) {
-      final destPath = p.join(destinationPath, file.name);
-      if (!FimaPath.isStrictlyWithin(destinationPath, destPath)) {
-        processedFiles++;
-        continue;
-      }
-      if (file.isFile) {
-        final data = file.content as List<int>;
-        final destFile = File(destPath);
-        destFile.createSync(recursive: true);
-        destFile.writeAsBytesSync(data);
-      } else {
-        Directory(destPath).createSync(recursive: true);
-      }
-      processedFiles++;
-      sendPort.send({
-        'operationName': 'Extracting',
-        'progress': processedFiles / totalFiles,
-        'currentItem': p.basename(file.name),
-      });
-    }
-    sendPort.send(null);
-  } catch (e) {
-    sendPort.send({'error': e.toString()});
-  }
-}
-
-void _isolateCompressItems(Map<String, dynamic> args) {
-  final sendPort = args['sendPort'] as SendPort;
-  _isolateCompressItemsAsync(args).then((_) {}).catchError((e) {
-    sendPort.send({'error': e.toString()});
-  });
-}
-
-Future<void> _isolateCompressItemsAsync(Map<String, dynamic> args) async {
-  final sendPort = args['sendPort'] as SendPort;
-  final paths = args['paths'] as List<String>;
-  final zipPath = args['zipPath'] as String;
-  final basePath = args['basePath'] as String;
-
-  int totalFiles = 0;
-  final fileEntries = <_FileEntry>[];
-
-  for (final path in paths) {
-    final stat = FileStat.statSync(path);
-    if (stat.type == FileSystemEntityType.directory) {
-      final dir = Directory(path);
-      for (final entity in dir.listSync(recursive: true)) {
-        if (entity is File) {
-          totalFiles++;
-          final archivePath = p.relative(entity.path, from: basePath);
-          fileEntries.add(_FileEntry(entity.path, archivePath));
-        }
-      }
-    } else if (stat.type == FileSystemEntityType.file) {
-      totalFiles++;
-      final archivePath = p.relative(path, from: basePath);
-      fileEntries.add(_FileEntry(path, archivePath));
-    }
-  }
-
-  final encoder = ZipFileEncoder();
-  encoder.create(zipPath);
-
-  if (totalFiles == 0) {
-    await encoder.close();
-    sendPort.send(null);
-    return;
-  }
-
-  int processedFiles = 0;
-  for (final entry in fileEntries) {
-    await encoder.addFile(File(entry.absolutePath), entry.archivePath);
-    processedFiles++;
-    sendPort.send({
-      'operationName': 'Compressing',
-      'progress': processedFiles / totalFiles,
-      'currentItem': p.basename(entry.absolutePath),
-    });
-  }
-
-  await encoder.close();
-  sendPort.send(null);
+  Future<void> openWithApplication(DesktopApplication app, String path) => _ref
+      .read(desktopIntegrationServiceProvider)
+      .openWithApplication(app, path);
 }

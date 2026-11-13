@@ -1,12 +1,16 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:fima/domain/entity/panel_tab.dart';
 import 'package:fima/domain/entity/remote_connection.dart';
 import 'package:fima/infrastructure/repository/compound_file_system_repository.dart';
-import 'package:fima/infrastructure/service/secure_password_service.dart';
+import 'package:fima/infrastructure/service/remote_session_manager.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+final remoteSessionManagerProvider = Provider<RemoteSessionManager>((ref) {
+  return RemoteSessionManager();
+});
 
 /// Request emitted when an SSH tab needs interactive authentication
 /// (no saved password or saved password failed).
@@ -152,80 +156,76 @@ class PanelTabsController extends StateNotifier<PanelTabsState> {
   ) async {
     final repo = _ref.read(fileSystemRepositoryProvider);
     if (repo is! CompoundFileSystemRepository) return false;
+
+    final sessionManager = _ref.read(remoteSessionManagerProvider);
     final sshRepo = repo.sshRepository;
-
     final connId = RemoteConnection.connectionIdFromSshUrl(tab.path);
-    if (sshRepo.isConnected(connId)) {
-      if (!_loadedTabIds.contains(tab.id)) {
-        await controller.initTab(
-          panelId: _panelId,
-          initialPath: tab.path,
-          sortColumn: tab.sortColumn,
-          sortAscending: tab.sortAscending,
-        );
-      } else if (controller.needsHiddenFilesRefresh) {
-        await controller.refresh();
-      }
-      return true;
-    }
 
-    // Disconnected SSH session — prime UI state with the tab's SSH path and sort
-    // so the SSH header and tab title remain visible while reconnecting.
-    controller.primeSshTabState(
-      panelId: _panelId,
-      sshPath: tab.path,
-      sortColumn: tab.sortColumn,
-      sortAscending: tab.sortAscending,
-    );
-
-    final settings = _ref.read(userSettingsProvider);
-    final connection = settings.remoteConnections
-        .cast<RemoteConnection?>()
-        .firstWhere((c) => c?.id == connId, orElse: () => null);
-
-    if (connection == null) {
-      _ref
-          .read(overlayProvider.notifier)
-          .showToast('Remote connection "$connId" not found', isError: true);
-      await controller.initTab(
+    if (!sshRepo.isConnected(connId)) {
+      // Disconnected SSH session — prime UI state with the tab's SSH path
+      // and sort so the SSH header and tab title remain visible while connecting.
+      controller.primeSshTabState(
         panelId: _panelId,
-        initialPath: null,
+        sshPath: tab.path,
         sortColumn: tab.sortColumn,
         sortAscending: tab.sortAscending,
       );
-      return true;
     }
 
-    if (connection.rememberPassword) {
-      final savedPassword = await SecurePasswordService().getPassword(
-        connection.id,
-      );
-      if (savedPassword != null && savedPassword.isNotEmpty) {
-        try {
-          await sshRepo.connect(connection, savedPassword);
+    final result = await sessionManager.ensureConnected(
+      sshRepository: sshRepo,
+      sshUrl: tab.path,
+      savedConnections: _ref.read(userSettingsProvider).remoteConnections,
+    );
+
+    switch (result.status) {
+      case SshConnectionStatus.alreadyConnected:
+        if (!_loadedTabIds.contains(tab.id)) {
           await controller.initTab(
             panelId: _panelId,
             initialPath: tab.path,
             sortColumn: tab.sortColumn,
             sortAscending: tab.sortAscending,
           );
-          return true;
-        } catch (e) {
-          debugPrint('Auto-reconnect SSH failed for ${connection.name}: $e');
-          // Fall through to prompt for password.
+        } else if (controller.needsHiddenFilesRefresh) {
+          await controller.refresh();
         }
-      }
-    }
+        return true;
 
-    _nextSshAuthRequestId++;
-    _ref.read(pendingSshAuthProvider.notifier).state = SshAuthRequest(
-      panelId: _panelId,
-      tabId: tab.id,
-      connection: connection,
-      targetPath: tab.path,
-      requestId: _nextSshAuthRequestId,
-    );
-    return false;
+      case SshConnectionStatus.reconnected:
+        await controller.initTab(
+          panelId: _panelId,
+          initialPath: tab.path,
+          sortColumn: tab.sortColumn,
+          sortAscending: tab.sortAscending,
+        );
+        return true;
+
+      case SshConnectionStatus.connectionNotFound:
+        _ref
+            .read(overlayProvider.notifier)
+            .showToast('Remote connection "$connId" not found', isError: true);
+        await controller.initTab(
+          panelId: _panelId,
+          initialPath: null,
+          sortColumn: tab.sortColumn,
+          sortAscending: tab.sortAscending,
+        );
+        return true;
+
+      case SshConnectionStatus.needsPassword:
+        final connection = result.connection;
+        if (connection == null) return false;
+        _nextSshAuthRequestId++;
+        _ref.read(pendingSshAuthProvider.notifier).state = SshAuthRequest(
+          panelId: _panelId,
+          tabId: tab.id,
+          connection: connection,
+          targetPath: tab.path,
+          requestId: _nextSshAuthRequestId,
+        );
+        return false;
+    }
   }
 
   /// Creates a new tab in this panel duplicating the active tab's folder & sort,
