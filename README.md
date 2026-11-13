@@ -8,6 +8,16 @@
 
 Fima is a modern, two-panel file manager built with Flutter, designed specifically for **programmers** who prefer keyboard-centric workflows. It is a cross-platform desktop application available for Linux, Windows, and macOS.
 
+## Download
+
+Download the latest [nightly build](https://github.com/spajdo/fima/releases/tag/nightly) (automated daily build):
+
+| Platform | Portable | Installer |
+|----------|----------|-----------|
+| **Linux** | [fima-nightly-linux.zip](https://github.com/spajdo/fima/releases/download/nightly/fima-nightly-linux.zip) | [fima-nightly.deb](https://github.com/spajdo/fima/releases/download/nightly/fima-nightly.deb) |
+| **Windows** | [fima-nightly-windows.zip](https://github.com/spajdo/fima/releases/download/nightly/fima-nightly-windows.zip) | [fima-nightly-setup.exe](https://github.com/spajdo/fima/releases/download/nightly/fima-nightly-setup.exe) |
+| **macOS** | [fima-nightly-macos.zip](https://github.com/spajdo/fima/releases/download/nightly/fima-nightly-macos.zip) | [fima-nightly.dmg](https://github.com/spajdo/fima/releases/download/nightly/fima-nightly.dmg) |
+
 ## Key Features
 
 - **Keyboard First**: Navigate and control the entire application without leaving the keyboard.

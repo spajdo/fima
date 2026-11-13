@@ -62,24 +62,19 @@ jobs:
       - name: Create portable zip
         run: |
           cd build/linux/x64/release
-          zip -r "../../../../fima-${{ steps.version.outputs.version }}-linux.zip" bundle/
-          zip -r "../../../../fima-linux.zip" bundle/
+          zip -r "../../../../fima-nightly-linux.zip" bundle/
 
       # ── .deb package ──────────────────────────
       - name: Build .deb package
-        run: |
-          ./linux/packaging/build_deb.sh "fima-${{ steps.version.outputs.version }}.deb"
-          cp "fima-${{ steps.version.outputs.version }}.deb" fima.deb
+        run: ./linux/packaging/build_deb.sh "fima-nightly.deb"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-builds
           path: |
-            fima-${{ steps.version.outputs.version }}-linux.zip
-            fima-linux.zip
-            fima-${{ steps.version.outputs.version }}.deb
-            fima.deb
+            fima-nightly-linux.zip
+            fima-nightly.deb
           retention-days: 30
 
   # ─────────────────────────────────────────────
@@ -119,8 +114,7 @@ jobs:
         run: |
           Compress-Archive `
             -Path build\windows\x64\runner\Release\* `
-            -DestinationPath "fima-${{ steps.version.outputs.version }}-windows.zip"
-          Copy-Item "fima-${{ steps.version.outputs.version }}-windows.zip" "fima-windows.zip"
+            -DestinationPath "fima-nightly-windows.zip"
         shell: powershell
 
       # ── Inno Setup installer ──────────────────
@@ -130,8 +124,7 @@ jobs:
 
       - name: Build installer
         run: |
-          powershell -ExecutionPolicy Bypass -File windows/build_installer.ps1 -OutputFile "fima-${{ steps.version.outputs.version }}-setup.exe"
-          Copy-Item "fima-${{ steps.version.outputs.version }}-setup.exe" "fima-setup.exe"
+          powershell -ExecutionPolicy Bypass -File windows/build_installer.ps1 -OutputFile "fima-nightly-setup.exe"
         shell: powershell
 
       - name: Upload artifacts
@@ -139,10 +132,8 @@ jobs:
         with:
           name: windows-builds
           path: |
-            fima-${{ steps.version.outputs.version }}-windows.zip
-            fima-windows.zip
-            fima-${{ steps.version.outputs.version }}-setup.exe
-            fima-setup.exe
+            fima-nightly-windows.zip
+            fima-nightly-setup.exe
           retention-days: 30
 
   # ─────────────────────────────────────────────
@@ -183,26 +174,22 @@ jobs:
       - name: Create portable zip
         run: |
           cd build/macos/Build/Products/Release
-          zip -r "../../../../../fima-${{ steps.version.outputs.version }}-macos.zip" fima.app
-          zip -r "../../../../../fima-macos.zip" fima.app
+          zip -r "../../../../../fima-nightly-macos.zip" fima.app
 
       # ── DMG ───────────────────────────────────
       - name: Install create-dmg
         run: brew install create-dmg
 
       - name: Build DMG
-        run: |
-          ./macos/packaging/build_dmg.sh "fima-${{ steps.version.outputs.version }}.dmg"
+        run: ./macos/packaging/build_dmg.sh "fima-nightly.dmg"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-builds
           path: |
-            fima-${{ steps.version.outputs.version }}-macos.zip
-            fima-macos.zip
-            fima-${{ steps.version.outputs.version }}.dmg
-            fima.dmg
+            fima-nightly-macos.zip
+            fima-nightly.dmg
           retention-days: 30
 
   # ─────────────────────────────────────────────
@@ -230,6 +217,19 @@ jobs:
           path: artifacts/
           merge-multiple: true
 
+      - name: Remove stale assets from nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view nightly --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release view nightly --repo "${{ github.repository }}" --json assets --jq '.assets[].name' | while IFS= read -r asset; do
+              if [ -n "$asset" ]; then
+                echo "Deleting old asset: $asset"
+                gh release delete-asset nightly "$asset" --repo "${{ github.repository }}" --yes || true
+              fi
+            done
+          fi
+
       - name: Publish nightly release
         uses: softprops/action-gh-release@v2
         with:
@@ -241,8 +241,8 @@ jobs:
 
             | Platform | Portable | Installer |
             |----------|----------|-----------|
-            | Linux    | `fima-${{ steps.version.outputs.version }}-linux.zip` | `fima-${{ steps.version.outputs.version }}.deb` |
-            | Windows  | `fima-${{ steps.version.outputs.version }}-windows.zip` | `fima-${{ steps.version.outputs.version }}-setup.exe` |
-            | macOS    | `fima-${{ steps.version.outputs.version }}-macos.zip` | `fima-${{ steps.version.outputs.version }}.dmg` |
+            | Linux    | `fima-nightly-linux.zip` | `fima-nightly.deb` |
+            | Windows  | `fima-nightly-windows.zip` | `fima-nightly-setup.exe` |
+            | macOS    | `fima-nightly-macos.zip` | `fima-nightly.dmg` |
           files: |
             artifacts/*
