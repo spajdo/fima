@@ -6,6 +6,14 @@ import 'package:fima/domain/entity/remote_connection.dart';
 import 'package:fima/domain/entity/workspace.dart';
 
 class UserSettings {
+  static const bool defaultUseSystemKeyRepeat = true;
+  static const int minKeyRepeatDelayMs = 50;
+  static const int maxKeyRepeatDelayMs = 600;
+  static const int defaultKeyRepeatDelayMs = 150;
+  static const int minKeyRepeatIntervalMs = 10;
+  static const int maxKeyRepeatIntervalMs = 150;
+  static const int defaultKeyRepeatIntervalMs = 35;
+
   final List<PanelTab> leftTabs;
   final int leftActiveTabIndex;
   final List<PanelTab> rightTabs;
@@ -27,6 +35,9 @@ class UserSettings {
   final bool useBuiltInTerminal;
   final List<RemoteConnection> remoteConnections;
   final bool showWalkthroughOnStartup;
+  final bool useSystemKeyRepeat;
+  final int keyRepeatDelayMs;
+  final int keyRepeatIntervalMs;
 
   const UserSettings({
     required this.leftTabs,
@@ -50,6 +61,9 @@ class UserSettings {
     this.useBuiltInTerminal = false,
     this.remoteConnections = const [],
     this.showWalkthroughOnStartup = true,
+    this.useSystemKeyRepeat = defaultUseSystemKeyRepeat,
+    this.keyRepeatDelayMs = defaultKeyRepeatDelayMs,
+    this.keyRepeatIntervalMs = defaultKeyRepeatIntervalMs,
   });
 
   PanelTab get activeLeftTab {
@@ -206,6 +220,16 @@ class UserSettings {
           .toList(),
       showWalkthroughOnStartup:
           json['showWalkthroughOnStartup'] as bool? ?? true,
+      useSystemKeyRepeat:
+          json['useSystemKeyRepeat'] as bool? ?? defaultUseSystemKeyRepeat,
+      keyRepeatDelayMs:
+          ((json['keyRepeatDelayMs'] as num?)?.toInt() ??
+                  defaultKeyRepeatDelayMs)
+              .clamp(minKeyRepeatDelayMs, maxKeyRepeatDelayMs),
+      keyRepeatIntervalMs:
+          ((json['keyRepeatIntervalMs'] as num?)?.toInt() ??
+                  defaultKeyRepeatIntervalMs)
+              .clamp(minKeyRepeatIntervalMs, maxKeyRepeatIntervalMs),
     );
   }
 
@@ -232,6 +256,9 @@ class UserSettings {
       'useBuiltInTerminal': useBuiltInTerminal,
       'remoteConnections': remoteConnections.map((e) => e.toJson()).toList(),
       'showWalkthroughOnStartup': showWalkthroughOnStartup,
+      'useSystemKeyRepeat': useSystemKeyRepeat,
+      'keyRepeatDelayMs': keyRepeatDelayMs,
+      'keyRepeatIntervalMs': keyRepeatIntervalMs,
     };
   }
 
@@ -257,6 +284,9 @@ class UserSettings {
     bool? useBuiltInTerminal,
     List<RemoteConnection>? remoteConnections,
     bool? showWalkthroughOnStartup,
+    bool? useSystemKeyRepeat,
+    int? keyRepeatDelayMs,
+    int? keyRepeatIntervalMs,
   }) {
     return UserSettings(
       leftTabs: leftTabs ?? this.leftTabs,
@@ -281,6 +311,9 @@ class UserSettings {
       remoteConnections: remoteConnections ?? this.remoteConnections,
       showWalkthroughOnStartup:
           showWalkthroughOnStartup ?? this.showWalkthroughOnStartup,
+      useSystemKeyRepeat: useSystemKeyRepeat ?? this.useSystemKeyRepeat,
+      keyRepeatDelayMs: keyRepeatDelayMs ?? this.keyRepeatDelayMs,
+      keyRepeatIntervalMs: keyRepeatIntervalMs ?? this.keyRepeatIntervalMs,
     );
   }
 }

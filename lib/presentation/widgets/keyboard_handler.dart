@@ -13,9 +13,6 @@ import 'package:fima/presentation/providers/overlay_provider.dart';
 import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 
-const _keyRepeatInitialDelay = Duration(milliseconds: 150);
-const _keyRepeatInterval = Duration(milliseconds: 50);
-
 class KeyboardHandler extends ConsumerStatefulWidget {
   final Widget child;
 
@@ -28,49 +25,43 @@ class KeyboardHandler extends ConsumerStatefulWidget {
 class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
   final Map<LogicalKeyboardKey, Timer> _keyRepeatTimers = {};
 
-  void _startKeyRepeat(
-    BuildContext context,
-    WidgetRef ref,
-    LogicalKeyboardKey key,
-  ) {
-    _stopKeyRepeat(key);
+  void _executeNavigationKey(WidgetRef ref, LogicalKeyboardKey key) {
+    final activePanelId = ref.read(focusProvider.notifier).getActivePanelId();
+    final activeTabId = ref.read(panelTabsProvider(activePanelId)).activeTabId;
+    final panelController = ref.read(panelStateProvider(activeTabId).notifier);
 
-    void moveAction() {
-      final focusController = ref.read(focusProvider.notifier);
-      final activePanelId = focusController.getActivePanelId();
-      final activeTabId = ref
-          .read(panelTabsProvider(activePanelId))
-          .activeTabId;
-      final panelController = ref.read(
-        panelStateProvider(activeTabId).notifier,
-      );
-
-      if (key == LogicalKeyboardKey.arrowUp) {
-        panelController.moveSelectionUp();
-      } else if (key == LogicalKeyboardKey.arrowDown) {
-        panelController.moveSelectionDown();
-      } else if (key == LogicalKeyboardKey.arrowLeft) {
-        panelController.moveToFirst();
-      } else if (key == LogicalKeyboardKey.arrowRight) {
-        panelController.moveToLast();
-      } else if (key == LogicalKeyboardKey.home) {
-        panelController.moveToFirst();
-      } else if (key == LogicalKeyboardKey.end) {
-        panelController.moveToLast();
-      }
+    if (key == LogicalKeyboardKey.arrowUp) {
+      panelController.moveSelectionUp();
+    } else if (key == LogicalKeyboardKey.arrowDown) {
+      panelController.moveSelectionDown();
+    } else if (key == LogicalKeyboardKey.arrowLeft) {
+      panelController.moveToFirst();
+    } else if (key == LogicalKeyboardKey.arrowRight) {
+      panelController.moveToLast();
+    } else if (key == LogicalKeyboardKey.home) {
+      panelController.moveToFirst();
+    } else if (key == LogicalKeyboardKey.end) {
+      panelController.moveToLast();
     }
+  }
 
-    moveAction();
+  void _startKeyRepeat(
+    WidgetRef ref,
+    LogicalKeyboardKey key, {
+    required Duration initialDelay,
+    required Duration repeatInterval,
+  }) {
+    _stopKeyRepeat(key);
+    _executeNavigationKey(ref, key);
 
-    _keyRepeatTimers[key] = Timer(_keyRepeatInitialDelay, () {
-      if (_keyRepeatTimers.containsKey(key)) {
-        moveAction();
-        _keyRepeatTimers[key] = Timer.periodic(_keyRepeatInterval, (_) {
-          if (_keyRepeatTimers.containsKey(key)) {
-            moveAction();
-          }
-        });
-      }
+    _keyRepeatTimers[key] = Timer(initialDelay, () {
+      if (!mounted || !_keyRepeatTimers.containsKey(key)) return;
+      _executeNavigationKey(ref, key);
+      _keyRepeatTimers[key] = Timer.periodic(repeatInterval, (_) {
+        if (mounted && _keyRepeatTimers.containsKey(key)) {
+          _executeNavigationKey(ref, key);
+        }
+      });
     });
   }
 
@@ -159,13 +150,29 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
             HardwareKeyboard.instance.isShiftPressed;
 
         if (isNavigationKey && !hasAnyModifier) {
-          if (event is KeyDownEvent) {
-            _startKeyRepeat(context, ref, event.logicalKey);
-            return KeyEventResult.handled;
-          }
-          if (event is KeyRepeatEvent) {
-            // Timer drives held navigation repeat; absorb OS repeat event.
-            return KeyEventResult.handled;
+          final settings = ref.read(userSettingsProvider);
+          if (settings.useSystemKeyRepeat) {
+            if (event is KeyDownEvent || event is KeyRepeatEvent) {
+              _stopKeyRepeat(event.logicalKey);
+              _executeNavigationKey(ref, event.logicalKey);
+              return KeyEventResult.handled;
+            }
+          } else {
+            if (event is KeyDownEvent) {
+              _startKeyRepeat(
+                ref,
+                event.logicalKey,
+                initialDelay: Duration(milliseconds: settings.keyRepeatDelayMs),
+                repeatInterval: Duration(
+                  milliseconds: settings.keyRepeatIntervalMs,
+                ),
+              );
+              return KeyEventResult.handled;
+            }
+            if (event is KeyRepeatEvent) {
+              // Custom timer drives held navigation repeat; absorb OS repeat event.
+              return KeyEventResult.handled;
+            }
           }
         }
 

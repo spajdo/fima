@@ -1,14 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:fima/domain/entity/app_theme.dart';
+import 'package:fima/domain/entity/user_settings.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/providers/theme_provider.dart';
 import 'package:fima/presentation/widgets/panel/panel_overlay.dart';
 import 'package:fima/presentation/widgets/popups/key_map_tab.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class SettingsDialogContent extends ConsumerStatefulWidget {
   final double width;
@@ -38,6 +40,9 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent>
   bool _hasChanges = false;
   bool _themesLoaded = false;
   late bool _useBuiltInTerminal;
+  late bool _useSystemKeyRepeat;
+  late int _keyRepeatDelayMs;
+  late int _keyRepeatIntervalMs;
 
   @override
   void initState() {
@@ -49,6 +54,9 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent>
     _maxPathIndexes = settings.maxPathIndexes;
     _selectedThemeName = settings.themeName;
     _useBuiltInTerminal = settings.useBuiltInTerminal;
+    _useSystemKeyRepeat = settings.useSystemKeyRepeat;
+    _keyRepeatDelayMs = settings.keyRepeatDelayMs;
+    _keyRepeatIntervalMs = settings.keyRepeatIntervalMs;
     _loadThemes();
   }
 
@@ -107,6 +115,27 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent>
   void _onUseBuiltInTerminalChanged(bool value) {
     setState(() {
       _useBuiltInTerminal = value;
+      _hasChanges = true;
+    });
+  }
+
+  void _onUseSystemKeyRepeatChanged(bool value) {
+    setState(() {
+      _useSystemKeyRepeat = value;
+      _hasChanges = true;
+    });
+  }
+
+  void _onKeyRepeatDelayChanged(double value) {
+    setState(() {
+      _keyRepeatDelayMs = value.round();
+      _hasChanges = true;
+    });
+  }
+
+  void _onKeyRepeatIntervalChanged(double value) {
+    setState(() {
+      _keyRepeatIntervalMs = value.round();
       _hasChanges = true;
     });
   }
@@ -192,6 +221,11 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent>
         ref.read(userSettingsProvider).useBuiltInTerminal) {
       controller.toggleUseBuiltInTerminal();
     }
+    controller.setKeyRepeatSettings(
+      useSystemKeyRepeat: _useSystemKeyRepeat,
+      keyRepeatDelayMs: _keyRepeatDelayMs,
+      keyRepeatIntervalMs: _keyRepeatIntervalMs,
+    );
     controller.setMaxPathIndexes(_maxPathIndexes);
 
     final currentThemeName = ref.read(userSettingsProvider).themeName;
@@ -300,6 +334,10 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent>
           const SizedBox(height: 16),
           _buildShowHiddenFilesControl(theme),
           const SizedBox(height: 24),
+          _buildSectionTitle(theme, 'Navigation'),
+          const SizedBox(height: 12),
+          _buildNavigationSettings(theme),
+          const SizedBox(height: 24),
           _buildSectionTitle(theme, 'Terminal'),
           const SizedBox(height: 16),
           _buildUseBuiltInTerminalControl(theme),
@@ -370,13 +408,152 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent>
   }
 
   Widget _buildFontSizeControl(ThemeData theme) {
+    return _buildLabeledSlider(
+      theme: theme,
+      title: 'Font size',
+      valueLabel: '${_fontSize.toInt()}',
+      value: _fontSize,
+      min: 8,
+      max: 32,
+      divisions: 24,
+      minLabel: '8',
+      maxLabel: '32',
+      onChanged: _onFontSizeChanged,
+    );
+  }
+
+  Widget _buildNavigationSettings(ThemeData theme) {
+    final stepsPerSecond = (1000 / _keyRepeatIntervalMs).round();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () => _onUseSystemKeyRepeatChanged(!_useSystemKeyRepeat),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Checkbox(
+                  value: _useSystemKeyRepeat,
+                  onChanged: (value) {
+                    if (value != null) _onUseSystemKeyRepeatChanged(value);
+                  },
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Use system key repeat settings',
+                        style: theme.textTheme.bodyLarge,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Follow operating system keyboard delay and repeat speed when holding arrow keys',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        AnimatedOpacity(
+          duration: const Duration(milliseconds: 150),
+          opacity: _useSystemKeyRepeat ? 0.45 : 1.0,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 16, top: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildLabeledSlider(
+                  theme: theme,
+                  title: 'Initial repeat delay',
+                  subtitle: 'Wait time before continuous movement starts',
+                  valueLabel: '$_keyRepeatDelayMs ms',
+                  value: _keyRepeatDelayMs.toDouble(),
+                  min: UserSettings.minKeyRepeatDelayMs.toDouble(),
+                  max: UserSettings.maxKeyRepeatDelayMs.toDouble(),
+                  divisions:
+                      (UserSettings.maxKeyRepeatDelayMs -
+                          UserSettings.minKeyRepeatDelayMs) ~/
+                      10,
+                  minLabel: '${UserSettings.minKeyRepeatDelayMs} ms',
+                  maxLabel: '${UserSettings.maxKeyRepeatDelayMs} ms',
+                  onChanged: _useSystemKeyRepeat
+                      ? null
+                      : _onKeyRepeatDelayChanged,
+                ),
+                const SizedBox(height: 16),
+                _buildLabeledSlider(
+                  theme: theme,
+                  title: 'Repeat interval (movement speed)',
+                  subtitle: 'Lower interval means faster scrolling',
+                  valueLabel: '$_keyRepeatIntervalMs ms (~$stepsPerSecond/s)',
+                  value: _keyRepeatIntervalMs.toDouble(),
+                  min: UserSettings.minKeyRepeatIntervalMs.toDouble(),
+                  max: UserSettings.maxKeyRepeatIntervalMs.toDouble(),
+                  divisions:
+                      (UserSettings.maxKeyRepeatIntervalMs -
+                          UserSettings.minKeyRepeatIntervalMs) ~/
+                      5,
+                  minLabel: '${UserSettings.minKeyRepeatIntervalMs} ms (Fast)',
+                  maxLabel: '${UserSettings.maxKeyRepeatIntervalMs} ms (Slow)',
+                  onChanged: _useSystemKeyRepeat
+                      ? null
+                      : _onKeyRepeatIntervalChanged,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLabeledSlider({
+    required ThemeData theme,
+    required String title,
+    String? subtitle,
+    required String valueLabel,
+    required double value,
+    required double min,
+    required double max,
+    required int divisions,
+    required String minLabel,
+    required String maxLabel,
+    required ValueChanged<double>? onChanged,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('Font size', style: theme.textTheme.bodyLarge),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: theme.textTheme.bodyLarge),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
@@ -385,7 +562,7 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent>
                 border: Border.all(color: theme.dividerColor),
               ),
               child: Text(
-                '${_fontSize.toInt()}',
+                valueLabel,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w500,
                   fontFeatures: const [FontFeature.tabularFigures()],
@@ -403,24 +580,24 @@ class _SettingsDialogContentState extends ConsumerState<SettingsDialogContent>
             overlayColor: theme.colorScheme.primary.withValues(alpha: 0.12),
           ),
           child: Slider(
-            value: _fontSize,
-            min: 8,
-            max: 32,
-            divisions: 24,
-            onChanged: _onFontSizeChanged,
+            value: value.clamp(min, max),
+            min: min,
+            max: max,
+            divisions: divisions,
+            onChanged: onChanged,
           ),
         ),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              '8',
+              minLabel,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
             Text(
-              '32',
+              maxLabel,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

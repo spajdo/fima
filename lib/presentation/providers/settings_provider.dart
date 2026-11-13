@@ -103,6 +103,33 @@ class SettingsController extends StateNotifier<UserSettings> {
     save(); // Auto-save
   }
 
+  /// Update arrow-key navigation repeat settings.
+  void setKeyRepeatSettings({
+    required bool useSystemKeyRepeat,
+    required int keyRepeatDelayMs,
+    required int keyRepeatIntervalMs,
+  }) {
+    final clampedDelay = keyRepeatDelayMs.clamp(
+      UserSettings.minKeyRepeatDelayMs,
+      UserSettings.maxKeyRepeatDelayMs,
+    );
+    final clampedInterval = keyRepeatIntervalMs.clamp(
+      UserSettings.minKeyRepeatIntervalMs,
+      UserSettings.maxKeyRepeatIntervalMs,
+    );
+    if (state.useSystemKeyRepeat == useSystemKeyRepeat &&
+        state.keyRepeatDelayMs == clampedDelay &&
+        state.keyRepeatIntervalMs == clampedInterval) {
+      return;
+    }
+    state = state.copyWith(
+      useSystemKeyRepeat: useSystemKeyRepeat,
+      keyRepeatDelayMs: clampedDelay,
+      keyRepeatIntervalMs: clampedInterval,
+    );
+    save();
+  }
+
   /// Update show walkthrough setting
   void setShowWalkthroughOnStartup(bool show) {
     if (state.showWalkthroughOnStartup != show) {
