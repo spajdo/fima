@@ -5,6 +5,7 @@ import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:fima/domain/entity/key_map_action.dart';
 import 'package:fima/domain/entity/workspace.dart';
+import 'package:fima/domain/utils/fima_path.dart';
 import 'package:fima/infrastructure/service/application_service.dart';
 import 'package:fima/infrastructure/service/system_clipboard_service.dart';
 import 'package:fima/presentation/providers/clipboard_actions.dart';
@@ -227,14 +228,20 @@ class ActionGenerator {
         ref.read(userSettingsProvider.notifier).toggleShowHiddenFiles();
         break;
       case 'openTerminal':
-        if (panelState.currentPath.isNotEmpty) {
+        if (panelState.currentPath.isNotEmpty &&
+            !FimaPath.isSshPath(panelState.currentPath) &&
+            !FimaPath.isZipPath(panelState.currentPath)) {
           final useBuiltIn = ref.read(userSettingsProvider).useBuiltInTerminal;
           if (useBuiltIn) {
             final focusState = ref.read(focusProvider);
             final isLeftPanel = focusState.activePanel == ActivePanel.left;
             ref
                 .read(overlayProvider.notifier)
-                .showTerminal(isLeftPanel, panelState.currentPath);
+                .showTerminal(
+                  isLeftPanel,
+                  panelState.currentPath,
+                  tabId: activeTabId,
+                );
           } else {
             panelController.openTerminal(panelState.currentPath);
           }
@@ -543,7 +550,7 @@ class ActionGenerator {
 
     if (paths.length == 1) {
       // Single item: compress directly using its name
-      final itemName = paths.first.split('/').last;
+      final itemName = FimaPath.basename(paths.first);
       final zipName = '$itemName.zip';
       panelController.compressItems(paths, zipName).then((_) {
         panelController.refresh();

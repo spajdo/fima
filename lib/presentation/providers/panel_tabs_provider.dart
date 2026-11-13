@@ -109,9 +109,14 @@ class PanelTabsController extends StateNotifier<PanelTabsState> {
     final controller = _ref.read(panelStateProvider(tab.id).notifier);
 
     if (tab.path.startsWith('ssh://')) {
-      final handled = await _handleSshTabActivation(tab, controller);
-      if (handled) {
-        _loadedTabIds.add(tab.id);
+      _loadingTabIds.add(tab.id);
+      try {
+        final handled = await _handleSshTabActivation(tab, controller);
+        if (handled) {
+          _loadedTabIds.add(tab.id);
+        }
+      } finally {
+        _loadingTabIds.remove(tab.id);
       }
       return;
     }
@@ -152,17 +157,12 @@ class PanelTabsController extends StateNotifier<PanelTabsState> {
     final connId = RemoteConnection.connectionIdFromSshUrl(tab.path);
     if (sshRepo.isConnected(connId)) {
       if (!_loadedTabIds.contains(tab.id)) {
-        _loadingTabIds.add(tab.id);
-        try {
-          await controller.initTab(
-            panelId: _panelId,
-            initialPath: tab.path,
-            sortColumn: tab.sortColumn,
-            sortAscending: tab.sortAscending,
-          );
-        } finally {
-          _loadingTabIds.remove(tab.id);
-        }
+        await controller.initTab(
+          panelId: _panelId,
+          initialPath: tab.path,
+          sortColumn: tab.sortColumn,
+          sortAscending: tab.sortAscending,
+        );
       } else if (controller.needsHiddenFilesRefresh) {
         await controller.refresh();
       }
@@ -201,7 +201,6 @@ class PanelTabsController extends StateNotifier<PanelTabsState> {
         connection.id,
       );
       if (savedPassword != null && savedPassword.isNotEmpty) {
-        _loadingTabIds.add(tab.id);
         try {
           await sshRepo.connect(connection, savedPassword);
           await controller.initTab(
@@ -214,8 +213,6 @@ class PanelTabsController extends StateNotifier<PanelTabsState> {
         } catch (e) {
           debugPrint('Auto-reconnect SSH failed for ${connection.name}: $e');
           // Fall through to prompt for password.
-        } finally {
-          _loadingTabIds.remove(tab.id);
         }
       }
     }

@@ -5,8 +5,10 @@ import 'package:fima/domain/entity/file_operation.dart';
 import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/entity/remote_connection.dart';
 import 'package:fima/domain/repository/file_system_repository.dart';
+import 'package:fima/domain/utils/fima_path.dart';
 import 'package:fima/infrastructure/service/ssh_file_tail_service.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
 
 /// An active SSH session (client + SFTP client).
 class _SshSession {
@@ -227,6 +229,62 @@ class SshFileSystemRepository implements FileSystemRepository {
     await session.sftp.rename(oldRemote, newRemote);
   }
 
+  String _joinRemote(String remoteDir, String name) {
+    final cleanName = name.startsWith('/') ? name.substring(1) : name;
+    return p.posix.join(remoteDir, cleanName);
+  }
+
+  Future<void> _copyRemoteRecursive(
+    SftpClient sftp,
+    String srcRemote,
+    String dstRemote,
+  ) async {
+    final normalizedSrc = p.posix.normalize(srcRemote);
+    final normalizedDst = p.posix.normalize(dstRemote);
+    if (normalizedSrc == normalizedDst ||
+        p.posix.isWithin(normalizedSrc, normalizedDst)) {
+      throw FileSystemException(
+        'Cannot copy remote item onto itself or into its own subdirectory',
+        srcRemote,
+      );
+    }
+
+    final attrs = await sftp.stat(srcRemote);
+    if (attrs.isDirectory) {
+      try {
+        await sftp.mkdir(dstRemote);
+      } catch (_) {
+        // Directory may already exist
+      }
+      final entries = await sftp.listdir(srcRemote);
+      for (final entry in entries) {
+        final name = entry.filename;
+        if (name == '.' || name == '..') continue;
+        await _copyRemoteRecursive(
+          sftp,
+          _joinRemote(srcRemote, name),
+          _joinRemote(dstRemote, name),
+        );
+      }
+      return;
+    }
+
+    final srcFile = await sftp.open(srcRemote, mode: SftpFileOpenMode.read);
+    final dstFile = await sftp.open(
+      dstRemote,
+      mode:
+          SftpFileOpenMode.create |
+          SftpFileOpenMode.write |
+          SftpFileOpenMode.truncate,
+    );
+    try {
+      await dstFile.write(srcFile.read());
+    } finally {
+      await srcFile.close();
+      await dstFile.close();
+    }
+  }
+
   @override
   Future<void> copyItem(String sourcePath, String destinationPath) async {
     final connId = _connectionId(sourcePath);
@@ -234,8 +292,7 @@ class SshFileSystemRepository implements FileSystemRepository {
     final dstRemote = _remotePath(destinationPath);
     final session = _getSession(connId);
     if (session == null) throw StateError('Not connected: $connId');
-    final data = await _downloadBytes(session.sftp, srcRemote);
-    await _uploadBytes(session.sftp, dstRemote, data);
+    await _copyRemoteRecursive(session.sftp, srcRemote, dstRemote);
   }
 
   @override
@@ -260,22 +317,20 @@ class SshFileSystemRepository implements FileSystemRepository {
 
     for (final src in sourcePaths) {
       if (token.isCancelled) return;
-      final remoteName = _remotePath(src).split('/').last;
+      final remoteName = FimaPath.basename(src);
       final connIdSrc = _connectionId(src);
       final connIdDst = _connectionId(destinationPath);
 
-      if (connIdSrc == connIdDst) {
-        final dstRemote = '${_remotePath(destinationPath)}/$remoteName';
-        final session = _getSession(connIdSrc)!;
-        try {
-          final data = await _downloadBytes(session.sftp, _remotePath(src));
-          await _uploadBytes(session.sftp, dstRemote, data);
-        } catch (e) {
-          debugPrint('SSH copy error: $e');
-        }
-      } else {
-        debugPrint('Cross-server copy not yet supported');
+      if (connIdSrc != connIdDst) {
+        throw UnsupportedError('Cross-server SSH copy is not supported');
       }
+
+      final session = _getSession(connIdSrc);
+      if (session == null) throw StateError('Not connected: $connIdSrc');
+
+      final srcRemote = _remotePath(src);
+      final dstRemote = _joinRemote(_remotePath(destinationPath), remoteName);
+      await _copyRemoteRecursive(session.sftp, srcRemote, dstRemote);
 
       done++;
       yield OperationStatus(
@@ -299,15 +354,18 @@ class SshFileSystemRepository implements FileSystemRepository {
 
     for (final src in sourcePaths) {
       if (token.isCancelled) return;
-      final remoteName = _remotePath(src).split('/').last;
-      final dstUrl = _buildUrl(
-        _connectionId(src),
-        '${_remotePath(destinationPath)}/$remoteName',
-      );
-      try {
+      final remoteName = FimaPath.basename(src);
+      final dstUrl = FimaPath.join(destinationPath, remoteName);
+      final srcRemote = p.posix.normalize(_remotePath(src));
+      final dstRemote = p.posix.normalize(_remotePath(dstUrl));
+      if (p.posix.isWithin(srcRemote, dstRemote)) {
+        throw FileSystemException(
+          'Cannot move remote directory into its own subdirectory',
+          src,
+        );
+      }
+      if (srcRemote != dstRemote) {
         await renameItem(src, dstUrl);
-      } catch (e) {
-        debugPrint('SSH move error: $e');
       }
       done++;
       yield OperationStatus(
@@ -322,46 +380,144 @@ class SshFileSystemRepository implements FileSystemRepository {
 
   // ── Download / Upload helpers ───────────────────────────────────────────
 
-  Future<Uint8List> _downloadBytes(SftpClient sftp, String remotePath) async {
-    final file = await sftp.open(remotePath, mode: SftpFileOpenMode.read);
-    final chunks = <int>[];
-    await for (final chunk in file.read()) {
-      chunks.addAll(chunk);
-    }
-    await file.close();
-    return Uint8List.fromList(chunks);
-  }
-
-  Future<void> _uploadBytes(
+  Future<int> _streamRemoteFileToLocal(
     SftpClient sftp,
     String remotePath,
-    Uint8List data,
+    String localPath,
   ) async {
-    final file = await sftp.open(
+    await Directory(p.dirname(localPath)).create(recursive: true);
+    final remoteFile = await sftp.open(remotePath, mode: SftpFileOpenMode.read);
+    final localSink = File(localPath).openWrite();
+    int totalBytes = 0;
+    try {
+      await for (final chunk in remoteFile.read()) {
+        localSink.add(chunk);
+        totalBytes += chunk.length;
+      }
+      await localSink.flush();
+      return totalBytes;
+    } finally {
+      await localSink.close();
+      await remoteFile.close();
+    }
+  }
+
+  Future<void> _streamLocalFileToRemote(
+    SftpClient sftp,
+    String localPath,
+    String remotePath,
+  ) async {
+    final remoteFile = await sftp.open(
       remotePath,
-      mode: SftpFileOpenMode.create | SftpFileOpenMode.write,
+      mode:
+          SftpFileOpenMode.create |
+          SftpFileOpenMode.write |
+          SftpFileOpenMode.truncate,
     );
-    await file.write(Stream.value(data));
-    await file.close();
+    try {
+      await remoteFile.write(
+        File(localPath).openRead().map(Uint8List.fromList),
+      );
+    } finally {
+      await remoteFile.close();
+    }
   }
 
   /// Downloads a file from SSH to local filesystem.
   Future<int> downloadToLocal(String sshPath, String localPath) async {
     final connId = _connectionId(sshPath);
-    final remotePath = _remotePath(sshPath);
-    final sftp = _getSession(connId)!.sftp;
-    final data = await _downloadBytes(sftp, remotePath);
-    await File(localPath).writeAsBytes(data);
-    return data.length; // Return bytes written so caller knows initial size.
+    final session = _getSession(connId);
+    if (session == null) throw StateError('Not connected: $connId');
+    return _streamRemoteFileToLocal(
+      session.sftp,
+      _remotePath(sshPath),
+      localPath,
+    );
+  }
+
+  /// Downloads a remote file or directory recursively to [localPath].
+  Future<void> downloadEntryToLocal(String sshPath, String localPath) async {
+    final connId = _connectionId(sshPath);
+    final session = _getSession(connId);
+    if (session == null) throw StateError('Not connected: $connId');
+    await _downloadRemoteRecursive(
+      session.sftp,
+      _remotePath(sshPath),
+      localPath,
+    );
+  }
+
+  Future<void> _downloadRemoteRecursive(
+    SftpClient sftp,
+    String remotePath,
+    String localPath,
+  ) async {
+    final attrs = await sftp.stat(remotePath);
+    if (!attrs.isDirectory) {
+      await _streamRemoteFileToLocal(sftp, remotePath, localPath);
+      return;
+    }
+
+    await Directory(localPath).create(recursive: true);
+    final entries = await sftp.listdir(remotePath);
+    for (final entry in entries) {
+      final name = entry.filename;
+      if (name == '.' || name == '..') continue;
+      await _downloadRemoteRecursive(
+        sftp,
+        _joinRemote(remotePath, name),
+        p.join(localPath, name),
+      );
+    }
   }
 
   /// Uploads a local file to the SSH server.
   Future<void> uploadFromLocal(String localPath, String sshPath) async {
-    final data = await File(localPath).readAsBytes();
-    await _uploadBytes(
-      _getSession(_connectionId(sshPath))!.sftp,
+    final connId = _connectionId(sshPath);
+    final session = _getSession(connId);
+    if (session == null) throw StateError('Not connected: $connId');
+    await _streamLocalFileToRemote(
+      session.sftp,
+      localPath,
       _remotePath(sshPath),
-      data,
     );
+  }
+
+  /// Uploads a local file or directory recursively to [sshPath].
+  Future<void> uploadLocalEntry(String localPath, String sshPath) async {
+    final connId = _connectionId(sshPath);
+    final session = _getSession(connId);
+    if (session == null) throw StateError('Not connected: $connId');
+    await _uploadLocalRecursive(session.sftp, localPath, _remotePath(sshPath));
+  }
+
+  Future<void> _uploadLocalRecursive(
+    SftpClient sftp,
+    String localPath,
+    String remotePath,
+  ) async {
+    final type = await FileSystemEntity.type(localPath, followLinks: false);
+    if (type == FileSystemEntityType.directory) {
+      try {
+        await sftp.mkdir(remotePath);
+      } catch (_) {
+        // Directory may already exist
+      }
+      await for (final entity in Directory(
+        localPath,
+      ).list(recursive: false, followLinks: false)) {
+        final name = p.basename(entity.path);
+        await _uploadLocalRecursive(
+          sftp,
+          entity.path,
+          _joinRemote(remotePath, name),
+        );
+      }
+      return;
+    }
+
+    if (type == FileSystemEntityType.file) {
+      await _streamLocalFileToRemote(sftp, localPath, remotePath);
+    }
   }
 }

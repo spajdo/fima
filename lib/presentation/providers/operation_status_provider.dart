@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fima/domain/entity/file_operation.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
 import 'package:fima/presentation/providers/focus_provider.dart';
+import 'package:fima/presentation/providers/overlay_provider.dart';
 import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -112,6 +113,9 @@ class OperationController extends StateNotifier<OperationState> {
       onError: (e) {
         debugPrint('Operation error: $e');
         state = const OperationState(); // Reset on error
+        _ref
+            .read(overlayProvider.notifier)
+            .showToast('Operation failed: $e', isError: true);
       },
       onDone: () async {
         state = const OperationState(); // Reset on completion
@@ -125,10 +129,12 @@ class OperationController extends StateNotifier<OperationState> {
 
         if (sourceStillExists) {
           if (isCopy) {
-            // Items still exist in source → preserve by path.
+            // Items still exist in source -> preserve by path.
             await sourceController.loadPath(
               sourceState.currentPath,
               preserveFocusedIndex: true,
+              addToVisited: false,
+              recordVisit: false,
             );
           } else {
             // Move: items are gone from source. Select the next surviving item,
@@ -155,13 +161,20 @@ class OperationController extends StateNotifier<OperationState> {
             await sourceController.loadPath(
               sourceState.currentPath,
               selectItemPath: sourceSelectPath,
+              addToVisited: false,
+              recordVisit: false,
             );
           }
         }
 
         // Destination tab: keep whatever was focused there.
         if (destStillExists) {
-          await destController.loadPath(destPath, preserveFocusedIndex: true);
+          await destController.loadPath(
+            destPath,
+            preserveFocusedIndex: true,
+            addToVisited: false,
+            recordVisit: false,
+          );
         }
       },
     );
@@ -221,6 +234,9 @@ class OperationController extends StateNotifier<OperationState> {
       onError: (e) {
         debugPrint('Drop operation error: $e');
         state = const OperationState();
+        _ref
+            .read(overlayProvider.notifier)
+            .showToast('Operation failed: $e', isError: true);
       },
       onDone: () async {
         state = const OperationState();
@@ -239,6 +255,7 @@ class OperationController extends StateNotifier<OperationState> {
             sourceState.currentPath,
             addToVisited: false,
             preserveFocusedIndex: true,
+            recordVisit: false,
           );
         }
         if (destExists) {
@@ -246,6 +263,7 @@ class OperationController extends StateNotifier<OperationState> {
             destinationPath,
             addToVisited: false,
             preserveFocusedIndex: true,
+            recordVisit: false,
           );
         }
       },

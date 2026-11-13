@@ -66,7 +66,7 @@ class _FimaAppState extends ConsumerState<FimaApp> {
   }
 
   Future<void> _initialize() async {
-    await ref.read(userSettingsProvider.notifier).load();
+    await ref.read(userSettingsProvider.notifier).ensureLoaded();
     final themeName = ref.read(userSettingsProvider).themeName;
     final themeService = ref.read(themeServiceProvider);
     final savedTheme = await themeService.loadThemeByName(themeName);

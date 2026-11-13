@@ -4,6 +4,7 @@ import 'package:archive/archive_io.dart';
 import 'package:fima/domain/entity/file_operation.dart';
 import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/repository/file_system_repository.dart';
+import 'package:fima/domain/utils/fima_path.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
@@ -111,30 +112,8 @@ class ZipFileSystemRepository implements FileSystemRepository {
     return items;
   }
 
-  (String, String)? _extractZipPath(String path) {
-    if (path.isEmpty) return null;
-
-    final lowerPath = path.toLowerCase();
-    final zipIndex = lowerPath.indexOf('.zip');
-
-    if (zipIndex != -1) {
-      // It ends with .zip or has .zip/ inside it
-      int endIndex = zipIndex + 4;
-      if (endIndex == path.length ||
-          path[endIndex] == Platform.pathSeparator ||
-          path[endIndex] == '/') {
-        final zipFilePath = path.substring(0, endIndex);
-        String innerPath = '';
-        if (endIndex < path.length) {
-          innerPath = path.substring(endIndex + 1);
-          // Normalize separators for zip internal paths which are typically '/'
-          innerPath = innerPath.replaceAll(Platform.pathSeparator, '/');
-        }
-        return (zipFilePath, innerPath);
-      }
-    }
-    return null;
-  }
+  (String, String)? _extractZipPath(String path) =>
+      FimaPath.extractZipParts(path);
 
   /// Extracts files/directories from inside a ZIP archive to a local
   /// destination, streaming progress via [OperationStatus].
@@ -169,18 +148,19 @@ class ZipFileSystemRepository implements FileSystemRepository {
             ? innerPath.substring(0, innerPath.length - 1)
             : innerPath;
         final parentPrefix = trimmedInner.contains('/')
-            ? trimmedInner.substring(
-                0, trimmedInner.lastIndexOf('/') + 1)
+            ? trimmedInner.substring(0, trimmedInner.lastIndexOf('/') + 1)
             : '';
 
         for (final entry in archive) {
           final entryName = entry.name;
 
           // Match: exact file, exact dir entry, or contents inside dir.
-          final bool isMatch = entryName == innerPath ||
+          final bool isMatch =
+              entryName == innerPath ||
               entryName == '$innerPath/' ||
               entryName.startsWith(
-                innerPath.endsWith('/') ? innerPath : '$innerPath/');
+                innerPath.endsWith('/') ? innerPath : '$innerPath/',
+              );
 
           if (!isMatch) continue;
           if (seenEntryNames.contains(entryName)) continue;
@@ -216,6 +196,11 @@ class ZipFileSystemRepository implements FileSystemRepository {
       if (token.isCancelled) return;
 
       final destPath = p.join(destinationPath, relPath);
+      if (!FimaPath.isStrictlyWithin(destinationPath, destPath)) {
+        debugPrint('Skipping unsafe ZIP entry: $relPath');
+        processedItems++;
+        continue;
+      }
 
       try {
         if (!entry.isFile || entry.name.endsWith('/')) {

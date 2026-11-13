@@ -10,6 +10,7 @@ class PanelOverlayState {
   final String? toastMessage;
   final bool isToastError;
   final String? terminalPath;
+  final String? terminalTabId;
 
   const PanelOverlayState({
     this.type = OverlayType.none,
@@ -17,6 +18,7 @@ class PanelOverlayState {
     this.toastMessage,
     this.isToastError = false,
     this.terminalPath,
+    this.terminalTabId,
   });
 
   PanelOverlayState copyWith({
@@ -26,6 +28,7 @@ class PanelOverlayState {
     bool? isToastError,
     bool clearToast = false,
     String? terminalPath,
+    String? terminalTabId,
   }) {
     return PanelOverlayState(
       type: type ?? this.type,
@@ -33,6 +36,7 @@ class PanelOverlayState {
       toastMessage: clearToast ? null : (toastMessage ?? this.toastMessage),
       isToastError: clearToast ? false : (isToastError ?? this.isToastError),
       terminalPath: terminalPath ?? this.terminalPath,
+      terminalTabId: terminalTabId ?? this.terminalTabId,
     );
   }
 
@@ -49,11 +53,12 @@ class OverlayController extends StateNotifier<PanelOverlayState> {
     );
   }
 
-  void showTerminal(bool isLeftPanel, String path) {
+  void showTerminal(bool isLeftPanel, String path, {String? tabId}) {
     state = PanelOverlayState(
       type: OverlayType.terminal,
       isLeftPanel: isLeftPanel,
       terminalPath: path,
+      terminalTabId: tabId,
     );
   }
 

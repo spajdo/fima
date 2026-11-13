@@ -1,11 +1,9 @@
-import 'dart:io';
-
 import 'package:fima/domain/entity/file_operation.dart';
 import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/repository/file_system_repository.dart';
+import 'package:fima/domain/utils/fima_path.dart';
 import 'package:fima/infrastructure/repository/ssh_file_system_repository.dart';
 import 'package:fima/infrastructure/repository/zip_file_system_repository.dart';
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 class CompoundFileSystemRepository implements FileSystemRepository {
@@ -17,21 +15,9 @@ class CompoundFileSystemRepository implements FileSystemRepository {
     : zipRepository = ZipFileSystemRepository(defaultRepository),
       sshRepository = SshFileSystemRepository();
 
-  bool _isSshPath(String path) => path.startsWith('ssh://');
+  bool _isSshPath(String path) => FimaPath.isSshPath(path);
 
-  bool _isZipPath(String path) {
-    final lowerPath = path.toLowerCase();
-    final zipIndex = lowerPath.indexOf('.zip');
-    if (zipIndex != -1) {
-      int endIndex = zipIndex + 4;
-      if (endIndex == path.length ||
-          path[endIndex] == Platform.pathSeparator ||
-          path[endIndex] == '/') {
-        return true;
-      }
-    }
-    return false;
-  }
+  bool _isZipPath(String path) => FimaPath.isZipPath(path);
 
   FileSystemRepository _getRepositoryForPath(String path) {
     if (_isSshPath(path)) return sshRepository;
@@ -93,18 +79,14 @@ class CompoundFileSystemRepository implements FileSystemRepository {
     if (srcIsSsh && dstIsSsh) {
       return sshRepository.copyItem(sourcePath, destinationPath);
     } else if (srcIsSsh && !dstIsSsh) {
-      // SSH → local: download to temp then move to destination
-      return _downloadSshToLocal(sourcePath, destinationPath);
+      // SSH -> local
+      return sshRepository.downloadEntryToLocal(sourcePath, destinationPath);
     } else if (!srcIsSsh && dstIsSsh) {
-      // Local → SSH: upload the file
-      return sshRepository.uploadFromLocal(sourcePath, destinationPath);
+      // Local -> SSH
+      return sshRepository.uploadLocalEntry(sourcePath, destinationPath);
     } else {
       return defaultRepository.copyItem(sourcePath, destinationPath);
     }
-  }
-
-  Future<void> _downloadSshToLocal(String sshPath, String localDest) async {
-    await sshRepository.downloadToLocal(sshPath, localDest);
   }
 
   @override
@@ -141,53 +123,49 @@ class CompoundFileSystemRepository implements FileSystemRepository {
       final name = _itemName(src);
       final destItemPath = _joinPath(destinationPath, name);
 
-      try {
-        if (srcIsZip) {
-          // ZIP → Local: extract from archive
-          await for (final status in zipRepository.extractItems(
-            [src],
-            destinationPath,
-            token,
-          )) {
-            yield OperationStatus(
-              totalBytes: status.totalBytes,
-              processedBytes: status.processedBytes,
-              totalItems: total,
-              processedItems: done,
-              currentItem: status.currentItem,
-            );
-          }
-          done++;
-          continue;
-        } else if (srcIsSsh && !dstIsSsh) {
-          // SSH → Local
-          await sshRepository.downloadToLocal(src, destItemPath);
-        } else if (!srcIsSsh && dstIsSsh) {
-          // Local → SSH
-          await sshRepository.uploadFromLocal(src, destItemPath);
-        } else if (srcIsSsh && dstIsSsh) {
-          // SSH → SSH (same server)
-          await sshRepository.copyItem(src, destItemPath);
-        } else {
-          // Local → Local (stream for progress)
-          await for (final status in defaultRepository.copyItems(
-            [src],
-            destinationPath,
-            token,
-          )) {
-            yield OperationStatus(
-              totalBytes: status.totalBytes,
-              processedBytes: status.processedBytes,
-              totalItems: total,
-              processedItems: done,
-              currentItem: status.currentItem,
-            );
-          }
-          done++;
-          continue;
+      if (srcIsZip) {
+        // ZIP -> Local: extract from archive
+        await for (final status in zipRepository.extractItems(
+          [src],
+          destinationPath,
+          token,
+        )) {
+          yield OperationStatus(
+            totalBytes: status.totalBytes,
+            processedBytes: status.processedBytes,
+            totalItems: total,
+            processedItems: done,
+            currentItem: status.currentItem,
+          );
         }
-      } catch (e) {
-        debugPrint('Copy error ($src → $destinationPath): $e');
+        done++;
+        continue;
+      } else if (srcIsSsh && !dstIsSsh) {
+        // SSH -> Local
+        await sshRepository.downloadEntryToLocal(src, destItemPath);
+      } else if (!srcIsSsh && dstIsSsh) {
+        // Local -> SSH
+        await sshRepository.uploadLocalEntry(src, destItemPath);
+      } else if (srcIsSsh && dstIsSsh) {
+        // SSH -> SSH (same server)
+        await sshRepository.copyItem(src, destItemPath);
+      } else {
+        // Local -> Local (stream for progress)
+        await for (final status in defaultRepository.copyItems(
+          [src],
+          destinationPath,
+          token,
+        )) {
+          yield OperationStatus(
+            totalBytes: status.totalBytes,
+            processedBytes: status.processedBytes,
+            totalItems: total,
+            processedItems: done,
+            currentItem: status.currentItem,
+          );
+        }
+        done++;
+        continue;
       }
 
       done++;
@@ -219,54 +197,64 @@ class CompoundFileSystemRepository implements FileSystemRepository {
       final name = _itemName(src);
       final destItemPath = _joinPath(destinationPath, name);
 
-      try {
-        if (srcIsZip) {
-          // ZIP is read-only; "move" just copies.
-          await for (final status in zipRepository.extractItems(
-            [src],
-            destinationPath,
-            token,
-          )) {
-            yield OperationStatus(
-              totalBytes: status.totalBytes,
-              processedBytes: status.processedBytes,
-              totalItems: total,
-              processedItems: done,
-              currentItem: status.currentItem,
-            );
-          }
-          done++;
-          continue;
-        } else if (srcIsSsh && !dstIsSsh) {
-          // SSH → Local: download then delete remote
-          await sshRepository.downloadToLocal(src, destItemPath);
-          await sshRepository.deleteItem(src);
-        } else if (!srcIsSsh && dstIsSsh) {
-          // Local → SSH: upload then delete local
-          await sshRepository.uploadFromLocal(src, destItemPath);
-          await defaultRepository.deleteItem(src);
-        } else if (srcIsSsh && dstIsSsh) {
-          await sshRepository.moveItem(src, destItemPath);
-        } else {
-          // Local → Local (stream for progress)
-          await for (final status in defaultRepository.moveItems(
-            [src],
-            destinationPath,
-            token,
-          )) {
-            yield OperationStatus(
-              totalBytes: status.totalBytes,
-              processedBytes: status.processedBytes,
-              totalItems: total,
-              processedItems: done,
-              currentItem: status.currentItem,
-            );
-          }
-          done++;
-          continue;
+      if (srcIsZip) {
+        // ZIP is read-only; "move" just copies.
+        await for (final status in zipRepository.extractItems(
+          [src],
+          destinationPath,
+          token,
+        )) {
+          yield OperationStatus(
+            totalBytes: status.totalBytes,
+            processedBytes: status.processedBytes,
+            totalItems: total,
+            processedItems: done,
+            currentItem: status.currentItem,
+          );
         }
-      } catch (e) {
-        debugPrint('Move error ($src → $destinationPath): $e');
+        done++;
+        continue;
+      } else if (srcIsSsh && !dstIsSsh) {
+        // SSH -> Local: download then delete remote
+        await sshRepository.downloadEntryToLocal(src, destItemPath);
+        await sshRepository.deleteItem(src);
+      } else if (!srcIsSsh && dstIsSsh) {
+        // Local -> SSH: upload then delete local
+        await sshRepository.uploadLocalEntry(src, destItemPath);
+        await defaultRepository.deleteItem(src);
+      } else if (srcIsSsh && dstIsSsh) {
+        await for (final status in sshRepository.moveItems(
+          [src],
+          destinationPath,
+          token,
+        )) {
+          yield OperationStatus(
+            totalBytes: status.totalBytes,
+            processedBytes: status.processedBytes,
+            totalItems: total,
+            processedItems: done,
+            currentItem: status.currentItem,
+          );
+        }
+        done++;
+        continue;
+      } else {
+        // Local -> Local (stream for progress)
+        await for (final status in defaultRepository.moveItems(
+          [src],
+          destinationPath,
+          token,
+        )) {
+          yield OperationStatus(
+            totalBytes: status.totalBytes,
+            processedBytes: status.processedBytes,
+            totalItems: total,
+            processedItems: done,
+            currentItem: status.currentItem,
+          );
+        }
+        done++;
+        continue;
       }
 
       done++;
@@ -282,30 +270,7 @@ class CompoundFileSystemRepository implements FileSystemRepository {
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
-  String _itemName(String path) {
-    if (_isSshPath(path)) {
-      final uri = Uri.tryParse(path);
-      return uri?.pathSegments.lastWhere(
-            (s) => s.isNotEmpty,
-            orElse: () => path,
-          ) ??
-          path;
-    }
-    return p.basename(path);
-  }
+  String _itemName(String path) => FimaPath.basename(path);
 
-  String _joinPath(String base, String name) {
-    if (_isSshPath(base)) {
-      final remotePart = base.endsWith('/') ? '$base$name' : '$base/$name';
-      // Keep the ssh://connId prefix
-      final uri = Uri.tryParse(base);
-      if (uri != null) {
-        final connId = uri.host;
-        final basePath = uri.path.endsWith('/') ? uri.path : '${uri.path}/';
-        return 'ssh://$connId$basePath$name';
-      }
-      return remotePart;
-    }
-    return p.join(base, name);
-  }
+  String _joinPath(String base, String name) => FimaPath.join(base, name);
 }

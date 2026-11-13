@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:fima/domain/entity/file_operation.dart';
 import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/repository/file_system_repository.dart';
+import 'package:fima/domain/utils/fima_path.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -134,10 +135,19 @@ class LocalFileSystemRepository implements FileSystemRepository {
 
   @override
   Future<void> copyItem(String sourcePath, String destinationPath) async {
-    final type = await FileSystemEntity.type(sourcePath);
+    if (FimaPath.isSameOrWithin(sourcePath, destinationPath)) {
+      throw FileSystemException(
+        'Cannot copy an item onto itself or into its own subdirectory',
+        sourcePath,
+      );
+    }
+    final type = await FileSystemEntity.type(sourcePath, followLinks: false);
     if (type == FileSystemEntityType.directory) {
       // Recursive copy is manual in Dart
       await _copyDirectory(Directory(sourcePath), Directory(destinationPath));
+    } else if (type == FileSystemEntityType.link) {
+      final target = await Link(sourcePath).target();
+      await Link(destinationPath).create(target, recursive: true);
     } else {
       await File(sourcePath).copy(destinationPath);
     }
@@ -145,16 +155,27 @@ class LocalFileSystemRepository implements FileSystemRepository {
 
   @override
   Future<void> moveItem(String sourcePath, String destinationPath) async {
+    if (FimaPath.isSameOrWithin(sourcePath, destinationPath)) {
+      throw FileSystemException(
+        'Cannot move an item onto itself or into its own subdirectory',
+        sourcePath,
+      );
+    }
     await renameItem(sourcePath, destinationPath);
   }
 
   // Helper for non-stream copy (used by copyItem)
   Future<void> _copyDirectory(Directory source, Directory destination) async {
     await destination.create(recursive: true);
-    await for (final entity in source.list(recursive: false)) {
+    await for (final entity in source.list(
+      recursive: false,
+      followLinks: false,
+    )) {
       final newPath = p.join(destination.path, p.basename(entity.path));
       if (entity is Directory) {
         await _copyDirectory(entity, Directory(newPath));
+      } else if (entity is Link) {
+        await Link(newPath).create(await entity.target(), recursive: true);
       } else if (entity is File) {
         await entity.copy(newPath);
       }
@@ -167,6 +188,17 @@ class LocalFileSystemRepository implements FileSystemRepository {
     String destinationPath,
     CancellationToken token,
   ) async* {
+    for (final sourcePath in sourcePaths) {
+      final entityName = p.basename(sourcePath);
+      final destPath = p.join(destinationPath, entityName);
+      if (FimaPath.isSameOrWithin(sourcePath, destPath)) {
+        throw FileSystemException(
+          'Cannot copy an item onto itself or into its own subdirectory',
+          sourcePath,
+        );
+      }
+    }
+
     int totalItems = 0;
     int totalBytes = 0;
     int processedItems = 0;
@@ -222,8 +254,17 @@ class LocalFileSystemRepository implements FileSystemRepository {
   ) async* {
     int totalItems = sourcePaths.length;
     int processedItems = 0;
-    // For move totalBytes is only accurate if we fallback to copy.
-    // We start with 0 and update if fallback happens.
+
+    for (final sourcePath in sourcePaths) {
+      final entityName = p.basename(sourcePath);
+      final destPath = p.join(destinationPath, entityName);
+      if (FimaPath.isStrictlyWithin(sourcePath, destPath)) {
+        throw FileSystemException(
+          'Cannot move a directory into its own subdirectory',
+          sourcePath,
+        );
+      }
+    }
 
     yield OperationStatus(
       totalBytes: 0,
@@ -238,12 +279,24 @@ class LocalFileSystemRepository implements FileSystemRepository {
       final entityName = p.basename(sourcePath);
       final destPath = p.join(destinationPath, entityName);
 
+      if (p.equals(p.normalize(sourcePath), p.normalize(destPath))) {
+        processedItems++;
+        yield OperationStatus(
+          totalBytes: 0,
+          processedBytes: 0,
+          totalItems: totalItems,
+          processedItems: processedItems,
+          currentItem: entityName,
+        );
+        continue;
+      }
+
       bool renameSuccess = false;
       try {
         await renameItem(sourcePath, destPath);
         renameSuccess = true;
       } catch (e) {
-        // Fallback to copy + delete
+        // Fallback to copy + delete (cross-volume)
         renameSuccess = false;
       }
 
@@ -257,7 +310,7 @@ class LocalFileSystemRepository implements FileSystemRepository {
           currentItem: entityName,
         );
       } else {
-        // Fallback: Copy then Delete
+        // Fallback: Copy then Delete while preserving outer item count progress
         final stats = await _calculateTotalSize(sourcePath);
         final copyTotalItems = stats.$1;
         final copyTotalBytes = stats.$2;
@@ -271,12 +324,25 @@ class LocalFileSystemRepository implements FileSystemRepository {
           0,
           0,
         )) {
-          yield status.copyWith(currentItem: 'Moving ${status.currentItem}');
+          yield OperationStatus(
+            totalBytes: copyTotalBytes,
+            processedBytes: status.processedBytes,
+            totalItems: totalItems,
+            processedItems: processedItems,
+            currentItem: 'Moving ${status.currentItem}',
+          );
         }
 
         if (!token.isCancelled) {
           await deleteItem(sourcePath);
           processedItems++;
+          yield OperationStatus(
+            totalBytes: 0,
+            processedBytes: 0,
+            totalItems: totalItems,
+            processedItems: processedItems,
+            currentItem: entityName,
+          );
         }
       }
     }
@@ -287,12 +353,15 @@ class LocalFileSystemRepository implements FileSystemRepository {
   Future<(int, int)> _calculateTotalSize(String path) async {
     int items = 0;
     int bytes = 0;
-    final type = await FileSystemEntity.type(path);
+    final type = await FileSystemEntity.type(path, followLinks: false);
 
-    if (type == FileSystemEntityType.file) {
+    if (type == FileSystemEntityType.file ||
+        type == FileSystemEntityType.link) {
       items = 1;
-      final fileSize = (await File(path).stat()).size;
-      bytes = fileSize < 0 ? 0 : fileSize;
+      if (type == FileSystemEntityType.file) {
+        final fileSize = (await File(path).stat()).size;
+        bytes = fileSize < 0 ? 0 : fileSize;
+      }
     } else if (type == FileSystemEntityType.directory) {
       items = 1; // Directory itself
       try {
@@ -324,7 +393,7 @@ class LocalFileSystemRepository implements FileSystemRepository {
     int processedBytes = initialProcessedBytes;
     int processedItems = initialProcessedItems;
 
-    final type = await FileSystemEntity.type(sourceStr);
+    final type = await FileSystemEntity.type(sourceStr, followLinks: false);
 
     if (type == FileSystemEntityType.directory) {
       await Directory(destStr).create(recursive: true);
@@ -337,7 +406,9 @@ class LocalFileSystemRepository implements FileSystemRepository {
         currentItem: p.basename(sourceStr),
       );
 
-      await for (final entity in Directory(sourceStr).list(recursive: false)) {
+      await for (final entity in Directory(
+        sourceStr,
+      ).list(recursive: false, followLinks: false)) {
         if (token.isCancelled) return;
         final newDest = p.join(destStr, p.basename(entity.path));
         await for (final status in _recursiveCopy(
@@ -354,6 +425,17 @@ class LocalFileSystemRepository implements FileSystemRepository {
           processedItems = status.processedItems;
         }
       }
+    } else if (type == FileSystemEntityType.link) {
+      final target = await Link(sourceStr).target();
+      await Link(destStr).create(target, recursive: true);
+      processedItems++;
+      yield OperationStatus(
+        totalBytes: totalBytes,
+        processedBytes: processedBytes,
+        totalItems: totalItems,
+        processedItems: processedItems,
+        currentItem: p.basename(sourceStr),
+      );
     } else if (type == FileSystemEntityType.file) {
       final file = File(sourceStr);
       // Create streams

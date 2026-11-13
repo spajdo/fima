@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:fima/domain/entity/app_theme.dart';
 import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/entity/panel_state.dart';
+import 'package:fima/domain/utils/fima_path.dart';
 import 'package:fima/infrastructure/service/application_service.dart';
 import 'package:fima/infrastructure/service/item_metadata_service.dart';
 import 'package:fima/infrastructure/service/system_clipboard_service.dart';
@@ -1227,12 +1228,14 @@ class FileContextMenu {
         final termPath = (clickedItem != null && clickedItem.isDirectory)
             ? clickedItem.path
             : panelState.currentPath;
-        if (termPath.isNotEmpty) {
+        if (termPath.isNotEmpty &&
+            !FimaPath.isSshPath(termPath) &&
+            !FimaPath.isZipPath(termPath)) {
           final useBuiltIn = ref.read(userSettingsProvider).useBuiltInTerminal;
           if (useBuiltIn) {
             ref
                 .read(overlayProvider.notifier)
-                .showTerminal(panelId == 'left', termPath);
+                .showTerminal(panelId == 'left', termPath, tabId: tabId);
           } else {
             await controller.openTerminal(termPath);
           }

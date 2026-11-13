@@ -229,7 +229,7 @@ class KeyMapActionDefs {
       defaultShortcutLinux: 'Ctrl+D',
       defaultShortcutMacOS: '⌘ + D',
       showInOmniPanel: true,
-      omniPanelOrder: 19,
+      omniPanelOrder: 20,
     ),
     KeyMapAction(
       id: 'jumpToTop',

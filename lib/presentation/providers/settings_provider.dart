@@ -22,13 +22,35 @@ final userSettingsProvider =
 
 class SettingsController extends StateNotifier<UserSettings> {
   final SettingsService _service;
+  bool _isLoaded = false;
+  Future<void>? _inFlightLoad;
 
   SettingsController(this._service) : super(UserSettings.defaultSettings());
 
+  /// Ensures settings are loaded once, sharing any in-flight load across callers.
+  Future<void> ensureLoaded() async {
+    if (_isLoaded) return;
+    await load();
+  }
+
   /// Load settings from file
   Future<void> load() async {
+    if (_inFlightLoad != null) {
+      return _inFlightLoad!;
+    }
+    final future = _performLoad();
+    _inFlightLoad = future;
+    try {
+      await future;
+    } finally {
+      _inFlightLoad = null;
+    }
+  }
+
+  Future<void> _performLoad() async {
     final settings = await _service.load();
     state = settings;
+    _isLoaded = true;
   }
 
   /// Save current settings to file

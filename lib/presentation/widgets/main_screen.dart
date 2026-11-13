@@ -33,7 +33,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   }
 
   Future<void> _loadSettings() async {
-    await ref.read(userSettingsProvider.notifier).load();
+    await ref.read(userSettingsProvider.notifier).ensureLoaded();
     final settings = ref.read(userSettingsProvider);
 
     setState(() {
@@ -199,6 +199,9 @@ class _MainScreenState extends ConsumerState<MainScreen> {
         );
       case OverlayType.terminal:
         final panelId = overlayState.isLeftPanel ? 'left' : 'right';
+        final boundTabId =
+            overlayState.terminalTabId ??
+            ref.read(panelTabsProvider(panelId)).activeTabId;
         overlayContent = BuiltInTerminalWidget(
           width: panelWidth,
           height: panelHeight,
@@ -206,14 +209,20 @@ class _MainScreenState extends ConsumerState<MainScreen> {
           isLeftPanel: overlayState.isLeftPanel,
           onClose: () {
             ref.read(overlayProvider.notifier).close();
-            final tabId = ref.read(panelTabsProvider(panelId)).activeTabId;
-            ref.read(panelStateProvider(tabId).notifier).refresh();
+            if (ref
+                .read(panelTabsProvider(panelId).notifier)
+                .hasTab(boundTabId)) {
+              ref.read(panelStateProvider(boundTabId).notifier).refresh();
+            }
           },
           onDirectoryChanged: (newPath) {
-            final tabId = ref.read(panelTabsProvider(panelId)).activeTabId;
-            ref
-                .read(panelStateProvider(tabId).notifier)
-                .loadPath(newPath, addToVisited: false);
+            if (ref
+                .read(panelTabsProvider(panelId).notifier)
+                .hasTab(boundTabId)) {
+              ref
+                  .read(panelStateProvider(boundTabId).notifier)
+                  .loadPath(newPath, addToVisited: false, recordVisit: false);
+            }
           },
         );
       case OverlayType.none:

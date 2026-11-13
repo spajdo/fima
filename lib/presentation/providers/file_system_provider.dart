@@ -1,6 +1,7 @@
 import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/entity/panel_state.dart';
 import 'package:fima/domain/repository/file_system_repository.dart';
+import 'package:fima/domain/utils/fima_path.dart';
 import 'package:fima/infrastructure/repository/local_file_system_repository.dart';
 import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
@@ -43,6 +44,7 @@ class PanelController extends StateNotifier<PanelState> {
   String? _panelId;
   bool? _loadedShowHiddenFiles;
   List<FileSystemItem> _allItems = [];
+  int _loadGeneration = 0;
 
   PanelController(this._repository, this._ref, this._tabId)
     : super(const PanelState());
@@ -97,13 +99,16 @@ class PanelController extends StateNotifier<PanelState> {
     String? selectItemPath,
     bool preserveFocusedIndex = false,
     bool preserveSelection = false,
+    bool recordVisit = true,
   }) async {
+    final generation = ++_loadGeneration;
     try {
       final settings = _ref.read(userSettingsProvider);
       final items = await _repository.getItems(
         path,
         showHiddenFiles: settings.showHiddenFiles,
       );
+      if (!mounted || generation != _loadGeneration) return;
 
       _applyLoadedItems(
         path,
@@ -112,6 +117,7 @@ class PanelController extends StateNotifier<PanelState> {
         selectItemPath: selectItemPath,
         preserveFocusedIndex: preserveFocusedIndex,
         preserveSelection: preserveSelection,
+        recordVisit: recordVisit,
       );
     } catch (e) {
       debugPrint('Error loading path $path: $e');
@@ -143,12 +149,14 @@ class PanelController extends StateNotifier<PanelState> {
     }
 
     final normalizedPath = p.normalize(expanded);
+    final generation = ++_loadGeneration;
     try {
       final settings = _ref.read(userSettingsProvider);
       final items = await _repository.getItems(
         normalizedPath,
         showHiddenFiles: settings.showHiddenFiles,
       );
+      if (!mounted || generation != _loadGeneration) return null;
       _applyLoadedItems(normalizedPath, items);
       return null;
     } on PathAccessException {
@@ -182,6 +190,7 @@ class PanelController extends StateNotifier<PanelState> {
     String? selectItemPath,
     bool preserveFocusedIndex = false,
     bool preserveSelection = false,
+    bool recordVisit = true,
   }) {
     final nextDirectorySizes = path == state.currentPath
         ? Map<String, int>.from(state.directorySizes)
@@ -237,7 +246,9 @@ class PanelController extends StateNotifier<PanelState> {
 
     _savePath(path);
 
-    _ref.read(userSettingsProvider.notifier).indexPath(path);
+    if (recordVisit) {
+      _ref.read(userSettingsProvider.notifier).indexPath(path);
+    }
   }
 
   int _getFocusedIndex(
@@ -260,6 +271,7 @@ class PanelController extends StateNotifier<PanelState> {
         addToVisited: false,
         selectItemPath: null,
         preserveFocusedIndex: true,
+        recordVisit: false,
       );
     }
   }
@@ -278,7 +290,7 @@ class PanelController extends StateNotifier<PanelState> {
 
   Future<void> navigateToParent() async {
     if (state.currentPath.isEmpty) return;
-    final parent = p.dirname(state.currentPath);
+    final parent = FimaPath.dirname(state.currentPath);
     if (parent != state.currentPath) {
       String? selectPath;
       if (state.visitedPaths.isNotEmpty) {
@@ -727,21 +739,42 @@ class PanelController extends StateNotifier<PanelState> {
     }
   }
 
+  bool _isValidEntryName(String name) {
+    final trimmed = name.trim();
+    return trimmed.isNotEmpty &&
+        trimmed != '.' &&
+        trimmed != '..' &&
+        !trimmed.contains('/') &&
+        !trimmed.contains('\\');
+  }
+
   Future<void> createDirectory(String name) async {
+    final cleanName = name.trim();
+    if (!_isValidEntryName(cleanName)) return;
     try {
-      final newPath = p.join(state.currentPath, name);
+      final newPath = FimaPath.join(state.currentPath, cleanName);
       await _repository.createDirectory(newPath);
-      await loadPath(state.currentPath, selectItemPath: newPath);
+      await loadPath(
+        state.currentPath,
+        selectItemPath: newPath,
+        recordVisit: false,
+      );
     } catch (e) {
       debugPrint('Error creating directory: $e');
     }
   }
 
   Future<void> createFile(String name) async {
+    final cleanName = name.trim();
+    if (!_isValidEntryName(cleanName)) return;
     try {
-      final newPath = p.join(state.currentPath, name);
+      final newPath = FimaPath.join(state.currentPath, cleanName);
       await _repository.createFile(newPath);
-      await loadPath(state.currentPath, selectItemPath: newPath);
+      await loadPath(
+        state.currentPath,
+        selectItemPath: newPath,
+        recordVisit: false,
+      );
     } catch (e) {
       debugPrint('Error creating file: $e');
     }
@@ -764,12 +797,22 @@ class PanelController extends StateNotifier<PanelState> {
     final editingPath = state.editingPath;
     if (editingPath == null) return;
 
+    final cleanName = newName.trim();
+    if (!_isValidEntryName(cleanName)) {
+      state = state.clearEditing();
+      return;
+    }
+
     try {
-      final parent = p.dirname(editingPath);
-      final newPath = p.join(parent, newName);
+      final parent = FimaPath.dirname(editingPath);
+      final newPath = FimaPath.join(parent, cleanName);
       if (newPath != editingPath) {
         await _repository.renameItem(editingPath, newPath);
-        await loadPath(state.currentPath, selectItemPath: newPath);
+        await loadPath(
+          state.currentPath,
+          selectItemPath: newPath,
+          recordVisit: false,
+        );
       }
     } catch (e) {
       debugPrint('Error renaming item: $e');
@@ -835,6 +878,12 @@ class PanelController extends StateNotifier<PanelState> {
   }
 
   Future<void> extractArchive(String zipPath, String destinationPath) async {
+    if (FimaPath.isSshPath(zipPath) ||
+        FimaPath.isSshPath(destinationPath) ||
+        FimaPath.isZipPath(destinationPath)) {
+      return;
+    }
+
     final receivePort = ReceivePort();
     try {
       await Isolate.spawn(_isolateExtractArchive, {
@@ -874,8 +923,17 @@ class PanelController extends StateNotifier<PanelState> {
     List<String> paths,
     String destinationZipName,
   ) async {
+    if (paths.isEmpty ||
+        FimaPath.isSshPath(state.currentPath) ||
+        FimaPath.isZipPath(state.currentPath) ||
+        paths.any(
+          (pItem) => FimaPath.isSshPath(pItem) || FimaPath.isZipPath(pItem),
+        )) {
+      return;
+    }
+
     final receivePort = ReceivePort();
-    final zipPath = p.join(state.currentPath, destinationZipName);
+    final zipPath = FimaPath.join(state.currentPath, destinationZipName);
 
     try {
       await Isolate.spawn(_isolateCompressItems, {
@@ -912,6 +970,9 @@ class PanelController extends StateNotifier<PanelState> {
   }
 
   Future<void> openTerminal(String path) async {
+    if (path.isEmpty || FimaPath.isSshPath(path) || FimaPath.isZipPath(path)) {
+      return;
+    }
     // Linux generic way to open terminal
     // Try generic emulator first, then specific ones
     if (Platform.isLinux) {
@@ -1079,19 +1140,25 @@ void _isolateExtractArchive(Map<String, dynamic> args) {
     final archive = ZipDecoder().decodeBytes(bytes);
 
     int totalFiles = archive.length;
+    if (totalFiles == 0) {
+      sendPort.send(null);
+      return;
+    }
     int processedFiles = 0;
 
     for (final file in archive) {
+      final destPath = p.join(destinationPath, file.name);
+      if (!FimaPath.isStrictlyWithin(destinationPath, destPath)) {
+        processedFiles++;
+        continue;
+      }
       if (file.isFile) {
-        final filename = file.name;
         final data = file.content as List<int>;
-        final destFile = File(p.join(destinationPath, filename));
+        final destFile = File(destPath);
         destFile.createSync(recursive: true);
         destFile.writeAsBytesSync(data);
       } else {
-        Directory(
-          p.join(destinationPath, file.name),
-        ).createSync(recursive: true);
+        Directory(destPath).createSync(recursive: true);
       }
       processedFiles++;
       sendPort.send({

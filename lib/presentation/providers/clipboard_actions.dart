@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:fima/domain/entity/file_operation.dart';
+import 'package:fima/domain/utils/fima_path.dart';
 import 'package:fima/infrastructure/service/system_clipboard_service.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
-import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/internal_clipboard_provider.dart';
 import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -44,9 +44,23 @@ class ClipboardActions {
     await SystemClipboard.setFilePaths(paths, operation);
 
     if (operation == ClipboardOperation.cut) {
+      String? sourcePanelId;
+      for (final panelId in const ['left', 'right']) {
+        if (_ref
+            .read(panelTabsProvider(panelId).notifier)
+            .hasTab(activeTabId)) {
+          sourcePanelId = panelId;
+          break;
+        }
+      }
       _ref
           .read(internalClipboardProvider.notifier)
-          .setCutPaths(paths, panelState.currentPath);
+          .setCutPaths(
+            paths,
+            panelState.currentPath,
+            sourcePanelId: sourcePanelId,
+            sourceTabId: activeTabId,
+          );
     } else {
       _ref.read(internalClipboardProvider.notifier).clearCutPaths();
     }
@@ -86,7 +100,7 @@ class ClipboardActions {
     if (isInternalCut && internalClipboard.cutSourcePath != null) {
       sourcePath = internalClipboard.cutSourcePath;
     } else {
-      sourcePath = p.dirname(paths.first);
+      sourcePath = FimaPath.dirname(paths.first);
     }
 
     final isSameLocation = sourcePath == destPath;
@@ -105,38 +119,53 @@ class ClipboardActions {
 
       _ref.read(internalClipboardProvider.notifier).clearCutPaths();
 
-      final sourcePanelId = _ref
-          .read(focusProvider.notifier)
-          .getInactivePanelId();
-      final sourceTabId = _ref
-          .read(panelTabsProvider(sourcePanelId))
-          .activeTabId;
+      // Refresh only open active tabs that are still displaying the cut source
+      // directory (never hijack an unrelated panel's path).
+      if (sourcePath != null && !isSameLocation) {
+        for (final panelId in const ['left', 'right']) {
+          final candidateTabId = _ref
+              .read(panelTabsProvider(panelId))
+              .activeTabId;
+          if (candidateTabId == activeTabId) continue;
 
-      final sourcePanelState = _ref.read(panelStateProvider(sourceTabId));
-      String? sourceSelectPath;
-      final remaining = sourcePanelState.items
-          .where((item) => !paths.contains(item.path))
-          .toList();
-      if (remaining.isNotEmpty) {
-        final focusedIdx = sourcePanelState.focusedIndex;
-        if (focusedIdx >= 0 &&
-            focusedIdx < sourcePanelState.items.length &&
-            !paths.contains(sourcePanelState.items[focusedIdx].path)) {
-          sourceSelectPath = sourcePanelState.items[focusedIdx].path;
-        } else {
-          final targetIdx = focusedIdx.clamp(0, remaining.length - 1);
-          sourceSelectPath = remaining[targetIdx].path;
+          final candidateState = _ref.read(panelStateProvider(candidateTabId));
+          if (candidateState.currentPath != sourcePath) continue;
+
+          String? sourceSelectPath;
+          final remaining = candidateState.items
+              .where((item) => !paths.contains(item.path))
+              .toList();
+          if (remaining.isNotEmpty) {
+            final focusedIdx = candidateState.focusedIndex;
+            if (focusedIdx >= 0 &&
+                focusedIdx < candidateState.items.length &&
+                !paths.contains(candidateState.items[focusedIdx].path)) {
+              sourceSelectPath = candidateState.items[focusedIdx].path;
+            } else {
+              final targetIdx = focusedIdx.clamp(0, remaining.length - 1);
+              sourceSelectPath = remaining[targetIdx].path;
+            }
+          }
+
+          await _ref
+              .read(panelStateProvider(candidateTabId).notifier)
+              .loadPath(
+                sourcePath,
+                addToVisited: false,
+                selectItemPath: sourceSelectPath,
+                recordVisit: false,
+              );
         }
       }
 
-      if (sourcePath != null) {
-        _ref
-            .read(panelStateProvider(sourceTabId).notifier)
-            .loadPath(sourcePath, selectItemPath: sourceSelectPath);
-      }
-      _ref
+      await _ref
           .read(panelStateProvider(activeTabId).notifier)
-          .loadPath(destPath, preserveFocusedIndex: true);
+          .loadPath(
+            destPath,
+            addToVisited: false,
+            preserveFocusedIndex: true,
+            recordVisit: false,
+          );
     } else {
       if (isSameLocation) {
         final newPaths = _generateCopyNames(paths, destPath);
@@ -145,9 +174,14 @@ class ClipboardActions {
         }
 
         final destSelectPath = newPaths.isNotEmpty ? newPaths.first : null;
-        _ref
+        await _ref
             .read(panelStateProvider(activeTabId).notifier)
-            .loadPath(destPath, selectItemPath: destSelectPath);
+            .loadPath(
+              destPath,
+              addToVisited: false,
+              selectItemPath: destSelectPath,
+              recordVisit: false,
+            );
       } else {
         final stream = repository.copyItems(
           paths,
@@ -159,14 +193,19 @@ class ClipboardActions {
         }
 
         final copiedFileName = paths.isNotEmpty
-            ? p.basename(paths.first)
+            ? FimaPath.basename(paths.first)
             : null;
         final destSelectPath = copiedFileName != null
-            ? p.join(destPath, copiedFileName)
+            ? FimaPath.join(destPath, copiedFileName)
             : null;
-        _ref
+        await _ref
             .read(panelStateProvider(activeTabId).notifier)
-            .loadPath(destPath, selectItemPath: destSelectPath);
+            .loadPath(
+              destPath,
+              addToVisited: false,
+              selectItemPath: destSelectPath,
+              recordVisit: false,
+            );
       }
     }
   }

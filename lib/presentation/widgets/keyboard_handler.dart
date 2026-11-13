@@ -1,18 +1,23 @@
+import 'dart:async';
 import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fima/domain/entity/file_system_item.dart';
 import 'package:fima/domain/entity/key_map_action.dart';
 import 'package:fima/domain/entity/workspace.dart';
-import 'package:fima/infrastructure/service/keyboard_utils.dart';
+import 'package:fima/domain/utils/fima_path.dart';
 import 'package:fima/infrastructure/service/application_service.dart';
+import 'package:fima/infrastructure/service/keyboard_utils.dart';
 import 'package:fima/infrastructure/service/system_clipboard_service.dart';
 import 'package:fima/presentation/providers/clipboard_actions.dart';
-import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/file_system_provider.dart';
-import 'package:fima/presentation/providers/panel_feature_actions.dart';
-
+import 'package:fima/presentation/providers/focus_provider.dart';
 import 'package:fima/presentation/providers/operation_status_provider.dart';
 import 'package:fima/presentation/providers/overlay_provider.dart';
+import 'package:fima/presentation/providers/panel_feature_actions.dart';
 import 'package:fima/presentation/providers/panel_tabs_provider.dart';
 import 'package:fima/presentation/providers/settings_provider.dart';
 import 'package:fima/presentation/widgets/popups/application_picker_dialog.dart';
@@ -23,11 +28,6 @@ import 'package:fima/presentation/widgets/popups/item_info_dialog.dart';
 import 'package:fima/presentation/widgets/popups/omni_dialog.dart';
 import 'package:fima/presentation/widgets/popups/shortcuts_dialog.dart';
 import 'package:fima/presentation/widgets/popups/text_input_dialog.dart';
-import 'dart:async';
-
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 const _keyRepeatInitialDelay = Duration(milliseconds: 150);
 const _keyRepeatInterval = Duration(milliseconds: 50);
@@ -119,28 +119,6 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
             event.logicalKey == LogicalKeyboardKey.home ||
             event.logicalKey == LogicalKeyboardKey.end;
 
-        if (event is KeyDownEvent) {
-          if (isNavigationKey) {
-            final activePanelIdForNav = ref
-                .read(focusProvider.notifier)
-                .getActivePanelId();
-            final activeTabIdForNav = ref
-                .read(panelTabsProvider(activePanelIdForNav))
-                .activeTabId;
-            final navPanelState = ref.read(
-              panelStateProvider(activeTabIdForNav),
-            );
-            final isEditing =
-                navPanelState.editingPath != null ||
-                navPanelState.isEditingPath;
-            if (!isEditing) {
-              _startKeyRepeat(context, ref, event.logicalKey);
-            }
-            return KeyEventResult.ignored;
-          }
-          // Continue processing for other keys (Enter, Tab, Backspace, etc.)
-        }
-
         if (event is KeyUpEvent) {
           if (isNavigationKey) {
             _stopKeyRepeat(event.logicalKey);
@@ -165,7 +143,7 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
           return KeyEventResult.ignored;
         }
 
-        // If overlay is active, handle ESC to close it
+        // If overlay is active, handle ESC or ignore before panel navigation/shortcuts.
         final overlayState = ref.read(overlayProvider);
         if (overlayState.isActive) {
           if (event.logicalKey == LogicalKeyboardKey.escape) {
@@ -185,13 +163,30 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
             final terminalIsLeft = overlayState.isLeftPanel;
             final activeIsLeft = focusState.activePanel == ActivePanel.left;
             if (terminalIsLeft == activeIsLeft) {
-              // Same panel as terminal → let the terminal handle keys.
+              // Same panel as terminal -> let the terminal handle keys.
               return KeyEventResult.ignored;
             }
-            // Opposite panel is active → fall through to normal handling.
+            // Opposite panel is active -> fall through to normal handling.
           } else {
-            // Non-terminal overlay (settings, etc.) – swallow all keys.
+            // Non-terminal overlay (settings, etc.) - swallow all keys.
             return KeyEventResult.ignored;
+          }
+        }
+
+        final hasAnyModifier =
+            HardwareKeyboard.instance.isControlPressed ||
+            HardwareKeyboard.instance.isMetaPressed ||
+            HardwareKeyboard.instance.isAltPressed ||
+            HardwareKeyboard.instance.isShiftPressed;
+
+        if (isNavigationKey && !hasAnyModifier) {
+          if (event is KeyDownEvent) {
+            _startKeyRepeat(context, ref, event.logicalKey);
+            return KeyEventResult.handled;
+          }
+          if (event is KeyRepeatEvent) {
+            // Timer already drives held navigation repeat; avoid double move.
+            return KeyEventResult.handled;
           }
         }
 
@@ -497,12 +492,16 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         return KeyEventResult.handled;
       case 'openTerminal':
         final path = ref.read(panelStateProvider(activeTabId)).currentPath;
-        if (path.isNotEmpty) {
+        if (path.isNotEmpty &&
+            !FimaPath.isSshPath(path) &&
+            !FimaPath.isZipPath(path)) {
           final useBuiltIn = ref.read(userSettingsProvider).useBuiltInTerminal;
           if (useBuiltIn) {
             final focusState = ref.read(focusProvider);
             final isLeftPanel = focusState.activePanel == ActivePanel.left;
-            ref.read(overlayProvider.notifier).showTerminal(isLeftPanel, path);
+            ref
+                .read(overlayProvider.notifier)
+                .showTerminal(isLeftPanel, path, tabId: activeTabId);
           } else {
             _openTerminal(path);
           }
@@ -582,28 +581,41 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
         _copyPathToClipboard(ref, activeTabId);
         return KeyEventResult.handled;
       case 'extractHere':
-        final item = currentPanelState.items[currentPanelState.focusedIndex];
-        if (item.path.toLowerCase().endsWith('.zip')) {
-          panelController
-              .extractArchive(item.path, currentPanelState.currentPath)
-              .then((_) {
-                panelController.refresh();
-              });
+        if (currentPanelState.focusedIndex >= 0 &&
+            currentPanelState.focusedIndex < currentPanelState.items.length) {
+          final item = currentPanelState.items[currentPanelState.focusedIndex];
+          if (!item.isParentDetails &&
+              item.path.toLowerCase().endsWith('.zip') &&
+              !FimaPath.isSshPath(item.path)) {
+            panelController
+                .extractArchive(item.path, currentPanelState.currentPath)
+                .then((_) {
+                  panelController.refresh();
+                });
+          }
         }
         return KeyEventResult.handled;
       case 'extractToOpposite':
-        final item = currentPanelState.items[currentPanelState.focusedIndex];
-        if (item.path.toLowerCase().endsWith('.zip')) {
-          final oppositePanelId = activePanelId == 'left' ? 'right' : 'left';
-          final oppositeTabId = ref
-              .read(panelTabsProvider(oppositePanelId))
-              .activeTabId;
-          final destPath = ref
-              .read(panelStateProvider(oppositeTabId))
-              .currentPath;
-          panelController.extractArchive(item.path, destPath).then((_) {
-            ref.read(panelStateProvider(oppositeTabId).notifier).refresh();
-          });
+        if (currentPanelState.focusedIndex >= 0 &&
+            currentPanelState.focusedIndex < currentPanelState.items.length) {
+          final item = currentPanelState.items[currentPanelState.focusedIndex];
+          if (!item.isParentDetails &&
+              item.path.toLowerCase().endsWith('.zip') &&
+              !FimaPath.isSshPath(item.path)) {
+            final oppositePanelId = activePanelId == 'left' ? 'right' : 'left';
+            final oppositeTabId = ref
+                .read(panelTabsProvider(oppositePanelId))
+                .activeTabId;
+            final destPath = ref
+                .read(panelStateProvider(oppositeTabId))
+                .currentPath;
+            if (!FimaPath.isSshPath(destPath) &&
+                !FimaPath.isZipPath(destPath)) {
+              panelController.extractArchive(item.path, destPath).then((_) {
+                ref.read(panelStateProvider(oppositeTabId).notifier).refresh();
+              });
+            }
+          }
         }
         return KeyEventResult.handled;
       case 'filePreview':
@@ -791,7 +803,7 @@ class _KeyboardHandlerState extends ConsumerState<KeyboardHandler> {
 
     if (paths.length == 1) {
       // Single item: compress directly using its name
-      final itemName = paths.first.split('/').last;
+      final itemName = FimaPath.basename(paths.first);
       final zipName = '$itemName.zip';
       panelController.compressItems(paths, zipName).then((_) {
         panelController.refresh();

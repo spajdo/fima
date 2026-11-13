@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:pasteboard/pasteboard.dart';
 
 enum ClipboardOperation { copy, cut }
@@ -7,16 +8,25 @@ class SystemClipboard {
     List<String> paths,
     ClipboardOperation operation,
   ) async {
-    await Pasteboard.writeFiles(paths);
+    try {
+      await Pasteboard.writeFiles(paths);
+    } catch (e) {
+      debugPrint('SystemClipboard.setFilePaths error: $e');
+    }
   }
 
   static Future<(List<String> paths, ClipboardOperation operation)?>
   getFilePaths() async {
-    final files = await Pasteboard.files();
+    try {
+      final files = await Pasteboard.files();
 
-    if (files.isEmpty) return null;
+      if (files.isEmpty) return null;
 
-    return (files, ClipboardOperation.copy);
+      return (files, ClipboardOperation.copy);
+    } catch (e) {
+      debugPrint('SystemClipboard.getFilePaths error: $e');
+      return null;
+    }
   }
 
   static Future<bool> hasFilePaths() async {

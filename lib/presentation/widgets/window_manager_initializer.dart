@@ -43,7 +43,7 @@ class _WindowManagerInitializerState
 
   Future<void> _initializeWindowState() async {
     // Load settings first
-    await ref.read(userSettingsProvider.notifier).load();
+    await ref.read(userSettingsProvider.notifier).ensureLoaded();
 
     final settings = ref.read(userSettingsProvider);
 
@@ -166,6 +166,7 @@ class _WindowManagerInitializerState
 
   @override
   void onWindowFocus() {
+    if (!_isInitialized) return;
     debugPrint('WindowManagerInitializer: onWindowFocus triggered');
     try {
       for (final panelId in ['left', 'right']) {

@@ -52,7 +52,6 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   late final FocusNode _pathFocusNode;
   String? _pathError;
   bool _isValidatingPath = false;
-  bool _previousShowHiddenFiles = false;
 
   // Column width fractions (the third column gets the remainder).
   // Defaults approximate the old 3:1:2 flex ratio.
@@ -83,7 +82,6 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       ref
           .read(panelTabsProvider(widget.panelId).notifier)
           .ensureActiveTabLoaded();
-      _previousShowHiddenFiles = ref.read(userSettingsProvider).showHiddenFiles;
     });
   }
 
@@ -799,26 +797,43 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     final fimaTheme = ref.watch(themeProvider);
     final theme = Theme.of(context);
     final settings = ref.watch(userSettingsProvider);
+    final focusState = ref.watch(focusProvider);
+    final dragState = ref.watch(dragStateProvider);
+    final isActivePanel =
+        (widget.panelId == 'left' &&
+            focusState.activePanel == ActivePanel.left) ||
+        (widget.panelId == 'right' &&
+            focusState.activePanel == ActivePanel.right);
     final fontSize = settings.fontSize;
     final itemHeight = fontSize + 16.0;
 
-    // Prune scroll offsets for closed tabs
-    _scrollOffsets.removeWhere(
-      (id, _) => !tabsState.tabs.any((t) => t.id == id),
+    ref.listen<List<dynamic>>(
+      panelTabsProvider(widget.panelId).select((s) => s.tabs),
+      (_, nextTabs) {
+        _scrollOffsets.removeWhere((id, _) => !nextTabs.any((t) => t.id == id));
+      },
     );
 
-    // Check if showHiddenFiles setting changed and refresh if needed
-    if (_previousShowHiddenFiles != settings.showHiddenFiles) {
-      _previousShowHiddenFiles = settings.showHiddenFiles;
-      final currentPath = panelState.currentPath;
-      if (currentPath.isNotEmpty) {
-        controller.loadPath(
-          currentPath,
-          preserveSelection: true,
-          preserveFocusedIndex: true,
-        );
+    ref.listen<bool>(userSettingsProvider.select((s) => s.showHiddenFiles), (
+      previous,
+      next,
+    ) {
+      if (previous == null || previous == next) return;
+      final currentTabId = ref
+          .read(panelTabsProvider(widget.panelId))
+          .activeTabId;
+      final currentPanelState = ref.read(panelStateProvider(currentTabId));
+      if (currentPanelState.currentPath.isNotEmpty) {
+        ref
+            .read(panelStateProvider(currentTabId).notifier)
+            .loadPath(
+              currentPanelState.currentPath,
+              preserveSelection: true,
+              preserveFocusedIndex: true,
+              recordVisit: false,
+            );
       }
-    }
+    });
 
     ref.listen(panelTabsProvider(widget.panelId).select((s) => s.activeTabId), (
       previousTabId,
@@ -1064,13 +1079,6 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                             item.path,
                           );
                           final isFocused = panelState.focusedIndex == index;
-                          final focusState = ref.watch(focusProvider);
-                          final isActivePanel =
-                              (widget.panelId == 'left' &&
-                                  focusState.activePanel == ActivePanel.left) ||
-                              (widget.panelId == 'right' &&
-                                  focusState.activePanel == ActivePanel.right);
-                          final dragState = ref.watch(dragStateProvider);
                           final isDropTarget =
                               item.isDirectory &&
                               !item.isParentDetails &&
